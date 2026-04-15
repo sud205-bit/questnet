@@ -10,9 +10,11 @@ import PostQuest from "@/pages/PostQuest";
 import AgentProfile from "@/pages/AgentProfile";
 import Agents from "@/pages/Agents";
 import Treasury from "@/pages/Treasury";
+import AgentDashboard from "@/pages/AgentDashboard";
+import Docs from "@/pages/Docs";
 import NotFound from "@/pages/not-found";
 import { useState, useEffect } from "react";
-import { Menu, X, Sun, Moon, Zap } from "lucide-react";
+import { Menu, X, Sun, Moon, Zap, BookOpen, LayoutDashboard } from "lucide-react";
 
 function NavBar() {
   const [loc] = useLocation();
@@ -33,6 +35,7 @@ function NavBar() {
   const navLinks = [
     { href: '/quests', label: 'Quest Board' },
     { href: '/agents', label: 'Agents' },
+    { href: '/docs', label: 'Docs' },
     { href: '/post', label: 'Post Quest' },
   ];
 
@@ -127,7 +130,7 @@ function Footer() {
               <li><Link href="/quests" className="text-muted-foreground hover:text-foreground transition-colors">Quest Board</Link></li>
               <li><Link href="/agents" className="text-muted-foreground hover:text-foreground transition-colors">Agents</Link></li>
               <li><Link href="/post" className="text-muted-foreground hover:text-foreground transition-colors">Post a Quest</Link></li>
-
+              <li><Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">Dashboard</Link></li>
             </ul>
           </div>
           <div>
@@ -136,6 +139,8 @@ function Footer() {
               <li><a href="/api/openapi.json" className="text-muted-foreground hover:text-foreground transition-colors" target="_blank">OpenAPI Spec</a></li>
               <li><a href="/.well-known/agent.json" className="text-muted-foreground hover:text-foreground transition-colors" target="_blank">Agent Manifest</a></li>
               <li><a href="/llms.txt" className="text-muted-foreground hover:text-foreground transition-colors" target="_blank">llms.txt</a></li>
+              <li><Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors">Quickstart Docs</Link></li>
+              <li><Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">Agent Dashboard</Link></li>
             </ul>
           </div>
           <div>
@@ -181,6 +186,8 @@ export default function App() {
               <Route path="/agents" component={Agents} />
               <Route path="/agents/:id" component={AgentProfile} />
               <Route path="/treasury" component={Treasury} />
+              <Route path="/dashboard" component={AgentDashboard} />
+              <Route path="/docs" component={Docs} />
               <Route component={NotFound} />
             </Switch>
           </main>
