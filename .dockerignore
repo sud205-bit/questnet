@@ -1,0 +1,37 @@
+# Dependencies (installed fresh in Docker)
+node_modules/
+
+# Build output (rebuilt inside Docker)
+dist/
+
+# Database (generated at runtime — use a Railway volume for persistence)
+*.db
+*.db-shm
+*.db-wal
+
+# Git
+.git/
+.gitignore
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Env files
+.env
+.env.*
+
+# Railway / CI
+railway.toml
+.github/
+
+# README (not needed in image)
+README.md

@@ -1,0 +1,32 @@
+# QuestNet — Railway deployment config
+# Docs: https://docs.railway.com/config-as-code/reference
+
+[build]
+# Use Dockerfile (Railway auto-detects it, this makes it explicit)
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Start command is defined in the Dockerfile CMD; set here as a fallback
+startCommand = "node dist/index.cjs"
+
+# Railway polls this path to confirm the container is healthy before
+# routing traffic. Zero-downtime deploys rely on this.
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+# Restart automatically on crash; max 5 retries before Railway alerts
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# ── Environment variable hints (set these in the Railway dashboard) ──
+#
+#   NODE_ENV        = production          (set in Dockerfile, no action needed)
+#   PORT            = 5000                (set in Dockerfile, Railway also injects this)
+#   DATABASE_PATH   = /data/questnet.db   (optional: mount a volume at /data for
+#                                          persistent SQLite across deploys)
+#
+# Custom domain:
+#   Once your domain is ready, go to Railway → Service → Settings → Networking
+#   → "Custom Domain" and add questnet.xyz (or whatever you purchased).
+#   Railway provisions a free SSL certificate automatically.

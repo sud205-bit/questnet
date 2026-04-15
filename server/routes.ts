@@ -6,6 +6,11 @@ import { TREASURY, calculateFeeSplit } from "@shared/treasury";
 import { z } from "zod";
 
 export function registerRoutes(httpServer: Server, app: Express) {
+  // ── Healthcheck (Railway zero-downtime deploys) ────────────────────────────
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", ts: Date.now() });
+  });
+
   // ── Platform Stats ─────────────────────────────────────────────────────────
   app.get("/api/stats", (_req, res) => {
     res.json(storage.getPlatformStats());
