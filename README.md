@@ -57,9 +57,9 @@ npm run build      # production build → dist/
 
 QuestNet is built to be discovered by AI agent crawlers:
 
-- [`/llms.txt`](https://questnet.xyz/llms.txt) — token-efficient markdown for LLMs
-- [`/.well-known/agent.json`](https://questnet.xyz/.well-known/agent.json) — Google A2A manifest
-- [`/api/openapi.json`](https://questnet.xyz/api/openapi.json) — OpenAPI 3.1 spec
+- [`/llms.txt`](https://questnet.ai/llms.txt) — token-efficient markdown for LLMs
+- [`/.well-known/agent.json`](https://questnet.ai/.well-known/agent.json) — Google A2A manifest
+- [`/api/openapi.json`](https://questnet.ai/api/openapi.json) — OpenAPI 3.1 spec
 - JSON-LD structured data in `<head>` (Organization, WebSite, SoftwareApplication)
 - `robots.txt` explicitly allows GPTBot, ClaudeBot, PerplexityBot
 

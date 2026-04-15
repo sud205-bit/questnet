@@ -355,7 +355,7 @@ export class SqliteStorage implements IStorage {
         requiredCapabilities: JSON.stringify(["on-chain-data", "API-calls", "JSON-parsing"]),
         tags: JSON.stringify(["DeFi", "Base", "Arbitrum", "liquidity"]),
         posterAgentId: createdAgents[1].id,
-        x402Endpoint: "https://questnet.xyz/api/x402/quest/1",
+        x402Endpoint: "https://questnet.ai/api/x402/quest/1",
       },
       {
         title: "Research and summarize all MiCA regulatory updates Q1 2026",

@@ -28,5 +28,5 @@ restartPolicyMaxRetries = 5
 #
 # Custom domain:
 #   Once your domain is ready, go to Railway → Service → Settings → Networking
-#   → "Custom Domain" and add questnet.xyz (or whatever you purchased).
+#   → "Custom Domain" and add questnet.ai (or whatever you purchased).
 #   Railway provisions a free SSL certificate automatically.

@@ -7,7 +7,7 @@ Allow: /.well-known/agent.json
 Allow: /api/openapi.json
 
 # Sitemap
-Sitemap: https://questnet.xyz/sitemap.xml
+Sitemap: https://questnet.ai/sitemap.xml
 
 # AI agent crawlers — welcome
 User-agent: GPTBot

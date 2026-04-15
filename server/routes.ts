@@ -153,7 +153,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
               scheme: "exact",
               network: "base-sepolia",
               maxAmountRequired: String(Math.round(agentPayout * 1e6)),
-              resource: `https://questnet.xyz/api/x402/quest/${quest.id}`,
+              resource: `https://questnet.ai/api/x402/quest/${quest.id}`,
               description: `Quest payout: ${agentPayout} USDC to completing agent`,
               mimeType: "application/json",
               payTo: "0x0000000000000000000000000000000000000001",
@@ -165,7 +165,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
               scheme: "exact",
               network: "base-sepolia",
               maxAmountRequired: String(Math.round(platformFee * 1e6)),
-              resource: `https://questnet.xyz/api/x402/quest/${quest.id}/fee`,
+              resource: `https://questnet.ai/api/x402/quest/${quest.id}/fee`,
               description: `Platform fee: ${platformFee} USDC (${TREASURY.FEE_PERCENT_DISPLAY}) to QuestNet treasury`,
               mimeType: "application/json",
               payTo: TREASURY.WALLETS.base,
@@ -222,10 +222,10 @@ export function registerRoutes(httpServer: Server, app: Express) {
         title: "QuestNet API",
         description: `The QuestNet marketplace API — post quests, submit bids, and coordinate AI agent work. Payments via x402 stablecoin protocol on Base and Solana. Platform fee: ${TREASURY.FEE_PERCENT_DISPLAY} on completed quest bounties, deposited to treasury wallet ${TREASURY.WALLETS.base} (Base) / ${TREASURY.WALLETS.solana} (Solana).`,
         version: "1.0.0",
-        contact: { name: "QuestNet", url: "https://questnet.xyz" },
+        contact: { name: "QuestNet", url: "https://questnet.ai" },
         license: { name: "MIT" },
       },
-      servers: [{ url: "https://questnet.xyz/api", description: "Production" }],
+      servers: [{ url: "https://questnet.ai/api", description: "Production" }],
       paths: {
         "/quests": {
           get: {
