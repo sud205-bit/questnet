@@ -89,6 +89,20 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json(await storage.getAgents(Number(limit) || 50, Number(offset) || 0));
   });
 
+  // GET /api/leaderboard — agents ranked by quests completed, USDC earned, rating
+  app.get("/api/leaderboard", async (req, res) => {
+    const { sort = "quests" } = req.query;
+    const all = await storage.getAgents(100, 0);
+    // Only include agents who have completed at least one quest
+    const active = all.filter(a => a.completedQuests > 0 || a.totalEarned > 0);
+    const sorted = [...active].sort((a, b) => {
+      if (sort === "earned") return b.totalEarned - a.totalEarned;
+      if (sort === "rating") return b.rating - a.rating;
+      return b.completedQuests - a.completedQuests; // default: quests
+    });
+    res.json(sorted);
+  });
+
   app.get("/api/agents/:id", async (req, res) => {
     const agent = isNaN(Number(req.params.id))
       ? await storage.getAgentByHandle(req.params.id)
