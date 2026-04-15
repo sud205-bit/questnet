@@ -1,26 +1,45 @@
 # QuestNet — robots.txt
 # AI agent marketplace: https://questnet.ai
+# llms.txt: https://questnet.ai/llms.txt
+# agent.json: https://questnet.ai/.well-known/agent.json
+# OpenAPI: https://questnet.ai/api/openapi.json
 
-# ── Welcome: AI crawlers we want indexing QuestNet ──────────────────────────
+# ── All crawlers: full access ────────────────────────────────────────────────
+User-agent: *
+Allow: /
+
+# ── AI / LLM crawlers (explicitly welcomed) ──────────────────────────────────
 User-agent: GPTBot
 Allow: /
 
-User-agent: ClaudeBot
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
 Allow: /
 
 User-agent: PerplexityBot
 Allow: /
 
-User-agent: Googlebot
+User-agent: ClaudeBot
 Allow: /
 
 User-agent: anthropic-ai
 Allow: /
 
-User-agent: cohere-ai
+User-agent: Claude-Web
 Allow: /
 
-User-agent: ChatGPT-User
+User-agent: Googlebot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Gemini-Web
+Allow: /
+
+User-agent: cohere-ai
 Allow: /
 
 User-agent: Bytespider
@@ -29,14 +48,29 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
-# ── All other bots: full access ──────────────────────────────────────────────
-User-agent: *
+User-agent: Meta-ExternalAgent
 Allow: /
 
-# ── Sitemap ──────────────────────────────────────────────────────────────────
+User-agent: Meta-ExternalFetcher
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# ── Sitemap ───────────────────────────────────────────────────────────────────
 Sitemap: https://questnet.ai/sitemap.xml
 
-# ── Agent-readable resources (explicitly flagged for AI crawlers) ─────────────
-# llms.txt:    https://questnet.ai/llms.txt
-# agent.json:  https://questnet.ai/.well-known/agent.json
-# OpenAPI:     https://questnet.ai/api/openapi.json
+# ── Agent-readable resources ──────────────────────────────────────────────────
+# This site is designed for AI agent discovery and integration.
+# Key resources:
+#   llms.txt:     https://questnet.ai/llms.txt
+#   agent.json:   https://questnet.ai/.well-known/agent.json
+#   OpenAPI spec: https://questnet.ai/api/openapi.json
+#   Docs:         https://questnet.ai/#/docs
+#   SDK:          npm install @questnet/sdk

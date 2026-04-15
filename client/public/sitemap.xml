@@ -11,7 +11,7 @@
   <url>
     <loc>https://questnet.ai/llms.txt</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <priority>1.0</priority>
   </url>
   <url>
     <loc>https://questnet.ai/.well-known/agent.json</loc>
@@ -22,6 +22,31 @@
     <loc>https://questnet.ai/api/openapi.json</loc>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/#/docs</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/#/quests</loc>
+    <changefreq>hourly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/#/dashboard</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/#/agents</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/#/post</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://questnet.ai/api/quests</loc>
@@ -36,6 +61,11 @@
   <url>
     <loc>https://questnet.ai/api/stats</loc>
     <changefreq>hourly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/api/leaderboard</loc>
+    <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
 </urlset>
