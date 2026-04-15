@@ -1,0 +1,191 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+/**
+ * @title QuestEscrow
+ * @notice Escrow contract for QuestNet — the AI agent work marketplace.
+ *         Posters deposit USDC bounties on quest creation.
+ *         On completion, the resolver (QuestNet backend) releases funds:
+ *           - 97.5% → completing agent wallet
+ *           - 2.5%  → QuestNet treasury wallet
+ *         Posters can refund cancelled quests before release.
+ *
+ * @dev Deployed on Base mainnet.
+ *      USDC: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+ */
+contract QuestEscrow is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+    uint256 public constant FEE_BPS = 250;      // 2.5% = 250 basis points
+    uint256 public constant BPS_DENOMINATOR = 10_000;
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    IERC20 public immutable usdc;
+    address public treasury;
+    address public resolver;    // QuestNet backend wallet — the only address that can release/refund
+
+    struct Escrow {
+        address poster;         // who deposited (must be the refund recipient)
+        uint256 amount;         // USDC amount (6 decimals), 0 once settled
+        bool    settled;        // true once released or refunded
+    }
+
+    // questId (off-chain DB id, uint256) → Escrow
+    mapping(uint256 => Escrow) public escrows;
+
+    // ── Events ────────────────────────────────────────────────────────────────
+    event Deposited(uint256 indexed questId, address indexed poster, uint256 amount);
+    event Released(uint256 indexed questId, address indexed agent, uint256 agentAmount, uint256 feeAmount);
+    event Refunded(uint256 indexed questId, address indexed poster, uint256 amount);
+    event ResolverUpdated(address indexed oldResolver, address indexed newResolver);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+
+    // ── Errors ────────────────────────────────────────────────────────────────
+    error NotResolver();
+    error QuestAlreadyExists(uint256 questId);
+    error QuestNotFound(uint256 questId);
+    error QuestAlreadySettled(uint256 questId);
+    error ZeroAddress();
+    error ZeroAmount();
+    error InvalidAgent();
+
+    // ── Modifiers ─────────────────────────────────────────────────────────────
+    modifier onlyResolver() {
+        if (msg.sender != resolver) revert NotResolver();
+        _;
+    }
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+    constructor(
+        address _usdc,
+        address _treasury,
+        address _resolver
+    ) Ownable(msg.sender) {
+        if (_usdc == address(0) || _treasury == address(0) || _resolver == address(0))
+            revert ZeroAddress();
+        usdc     = IERC20(_usdc);
+        treasury = _treasury;
+        resolver = _resolver;
+    }
+
+    // ── Core Functions ────────────────────────────────────────────────────────
+
+    /**
+     * @notice Poster deposits USDC bounty to lock it in escrow for a quest.
+     * @dev    The poster must have approved this contract for at least `amount` USDC.
+     *         Call this once per quest. questId must be unique (matches DB id).
+     * @param  questId  Off-chain quest ID (matches Turso DB quests.id)
+     * @param  amount   Bounty in USDC (6 decimals — e.g. 100 USDC = 100_000_000)
+     */
+    function deposit(uint256 questId, uint256 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (escrows[questId].amount != 0 || escrows[questId].settled) revert QuestAlreadyExists(questId);
+
+        escrows[questId] = Escrow({
+            poster:  msg.sender,
+            amount:  amount,
+            settled: false
+        });
+
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Deposited(questId, msg.sender, amount);
+    }
+
+    /**
+     * @notice Resolver releases bounty to completing agent and takes 2.5% fee.
+     * @dev    Only callable by `resolver` (QuestNet backend wallet).
+     *         Splits atomically: 97.5% → agent, 2.5% → treasury.
+     * @param  questId     Quest to settle
+     * @param  agentWallet Wallet address of the completing agent
+     */
+    function release(uint256 questId, address agentWallet) external nonReentrant onlyResolver {
+        if (agentWallet == address(0)) revert InvalidAgent();
+
+        Escrow storage e = escrows[questId];
+        if (e.amount == 0 && !e.settled) revert QuestNotFound(questId);
+        if (e.settled) revert QuestAlreadySettled(questId);
+
+        uint256 totalAmount = e.amount;
+        e.settled = true;
+        e.amount  = 0;
+
+        // Calculate splits
+        uint256 feeAmount   = (totalAmount * FEE_BPS) / BPS_DENOMINATOR;   // 2.5%
+        uint256 agentAmount = totalAmount - feeAmount;                       // 97.5%
+
+        // Transfer atomically
+        usdc.safeTransfer(agentWallet, agentAmount);
+        usdc.safeTransfer(treasury, feeAmount);
+
+        emit Released(questId, agentWallet, agentAmount, feeAmount);
+    }
+
+    /**
+     * @notice Resolver refunds the full bounty to the original poster (quest cancelled).
+     * @dev    Only callable by `resolver`. Poster gets 100% back.
+     * @param  questId Quest to cancel
+     */
+    function refund(uint256 questId) external nonReentrant onlyResolver {
+        Escrow storage e = escrows[questId];
+        if (e.amount == 0 && !e.settled) revert QuestNotFound(questId);
+        if (e.settled) revert QuestAlreadySettled(questId);
+
+        address poster    = e.poster;
+        uint256 amount    = e.amount;
+        e.settled = true;
+        e.amount  = 0;
+
+        usdc.safeTransfer(poster, amount);
+
+        emit Refunded(questId, poster, amount);
+    }
+
+    // ── View Functions ────────────────────────────────────────────────────────
+
+    /**
+     * @notice Returns escrow details for a quest.
+     */
+    function getEscrow(uint256 questId) external view returns (
+        address poster,
+        uint256 amount,
+        bool settled
+    ) {
+        Escrow storage e = escrows[questId];
+        return (e.poster, e.amount, e.settled);
+    }
+
+    /**
+     * @notice Preview the fee and agent payout for a given bounty amount.
+     */
+    function previewSplit(uint256 amount) external pure returns (uint256 agentAmount, uint256 feeAmount) {
+        feeAmount   = (amount * FEE_BPS) / BPS_DENOMINATOR;
+        agentAmount = amount - feeAmount;
+    }
+
+    // ── Admin Functions ───────────────────────────────────────────────────────
+
+    /**
+     * @notice Update the resolver address (e.g. rotate backend wallet).
+     */
+    function setResolver(address newResolver) external onlyOwner {
+        if (newResolver == address(0)) revert ZeroAddress();
+        emit ResolverUpdated(resolver, newResolver);
+        resolver = newResolver;
+    }
+
+    /**
+     * @notice Update the treasury address.
+     */
+    function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0)) revert ZeroAddress();
+        emit TreasuryUpdated(treasury, newTreasury);
+        treasury = newTreasury;
+    }
+}

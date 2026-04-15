@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { parsePaymentHeader, verifyX402Payment } from "./x402";
 import { insertQuestSchema, insertBidSchema, insertAgentSchema, insertReviewSchema } from "@shared/schema";
 import { TREASURY, calculateFeeSplit } from "@shared/treasury";
+import { ESCROW_ENABLED, ESCROW_ADDRESS, verifyEscrowDeposit, releaseEscrow, refundEscrow, getEscrowState } from "./escrow";
 import { z } from "zod";
 
 // ── API Key middleware ─────────────────────────────────────────────────────────
@@ -141,17 +142,112 @@ export function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // POST quest — requires API key
+  // Optional: include { escrowDepositTxHash: "0x..." } in body to record on-chain escrow deposit
   app.post("/api/quests", requireApiKey, async (req, res) => {
     const result = insertQuestSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: result.error.flatten() });
+
     const quest = await storage.createQuest(result.data);
-    res.status(201).json(quest);
+
+    // If escrow is enabled and poster provided a deposit tx hash, verify it on-chain
+    const depositTxHash = req.body.escrowDepositTxHash as string | undefined;
+    if (depositTxHash && ESCROW_ENABLED) {
+      const verification = await verifyEscrowDeposit(quest.id, depositTxHash as `0x${string}`, quest.bountyUsdc);
+      if (verification.ok) {
+        await storage.updateQuest(quest.id, {
+          escrowTxHash: depositTxHash,
+          escrowContractAddress: ESCROW_ADDRESS,
+        });
+        return res.status(201).json({
+          ...quest,
+          escrowTxHash: depositTxHash,
+          escrowContractAddress: ESCROW_ADDRESS,
+          escrowVerified: true,
+        });
+      } else {
+        // Deposit verification failed — still create the quest but flag it
+        console.warn(`[escrow] Deposit verify failed for quest ${quest.id}:`, verification.error);
+        return res.status(201).json({
+          ...quest,
+          escrowVerified: false,
+          escrowWarning: verification.error,
+        });
+      }
+    }
+
+    // No escrow deposit provided — return quest with escrow payment instructions if enabled
+    const escrowInfo = ESCROW_ENABLED ? {
+      escrowContractAddress: ESCROW_ADDRESS,
+      escrowRequired: true,
+      escrowInstructions: {
+        action: "Call deposit(questId, amount) on the QuestEscrow contract before quest goes live",
+        contractAddress: ESCROW_ADDRESS,
+        questId: quest.id,
+        amountUsdc: quest.bountyUsdc,
+        amountRaw: String(Math.round(quest.bountyUsdc * 1e6)),
+        basescanLink: `https://basescan.org/address/${ESCROW_ADDRESS}`,
+      },
+    } : {};
+
+    res.status(201).json({ ...quest, ...escrowInfo });
   });
 
   app.patch("/api/quests/:id", async (req, res) => {
     const quest = await storage.getQuest(Number(req.params.id));
     if (!quest) return res.status(404).json({ error: "Quest not found" });
-    res.json(await storage.updateQuest(quest.id, req.body));
+    const updated = await storage.updateQuest(quest.id, req.body);
+    res.json(updated);
+  });
+
+  // POST /api/quests/:id/cancel — cancel quest and refund escrow bounty to poster
+  app.post("/api/quests/:id/cancel", requireApiKey, async (req, res) => {
+    const quest = await storage.getQuest(Number(req.params.id));
+    if (!quest) return res.status(404).json({ error: "Quest not found" });
+    if (quest.status === "completed") return res.status(400).json({ error: "Quest already completed" });
+    if (quest.status === "cancelled") return res.status(400).json({ error: "Quest already cancelled" });
+
+    let refundResult: { success: boolean; txHash: string | null; error?: string } = { success: false, txHash: null };
+
+    // Trigger on-chain refund if escrow deposit exists
+    if (ESCROW_ENABLED && quest.escrowTxHash) {
+      refundResult = await refundEscrow(quest.id);
+      if (!refundResult.success) {
+        console.warn(`[escrow] Refund failed for quest ${quest.id}: ${refundResult.error}`);
+      }
+    }
+
+    await storage.updateQuest(quest.id, { status: "cancelled" });
+
+    res.json({
+      success: true,
+      questId: quest.id,
+      status: "cancelled",
+      escrowRefunded: refundResult.success,
+      escrowRefundTxHash: refundResult.txHash ?? null,
+      ...(refundResult.error ? { escrowWarning: refundResult.error } : {}),
+    });
+  });
+
+  // GET /api/quests/:id/escrow — read escrow state from the contract
+  app.get("/api/quests/:id/escrow", async (req, res) => {
+    const quest = await storage.getQuest(Number(req.params.id));
+    if (!quest) return res.status(404).json({ error: "Quest not found" });
+
+    if (!ESCROW_ENABLED) {
+      return res.json({
+        escrowEnabled: false,
+        message: "Escrow contract not configured. Set ESCROW_CONTRACT_ADDRESS + RESOLVER_PRIVATE_KEY in Railway.",
+      });
+    }
+
+    const state = await getEscrowState(quest.id);
+    res.json({
+      escrowEnabled: true,
+      contractAddress: ESCROW_ADDRESS,
+      questId: quest.id,
+      escrowTxHash: quest.escrowTxHash ?? null,
+      onChainState: state,
+    });
   });
 
   // ── Bids (API key required for submit) ────────────────────────────────────
@@ -285,21 +381,40 @@ export function registerRoutes(httpServer: Server, app: Express) {
     // Verify on-chain (with DB fallback)
     const verification = await verify(sig, agentWallet, quest.bountyUsdc);
 
+    let escrowReleaseTxHash: string | undefined;
+
+    // ── Escrow release path ────────────────────────────────────────────────────
+    // If the escrow contract is configured AND this quest has an escrow deposit,
+    // use contract release() instead of relying on a manual USDC transfer.
+    const hasEscrowDeposit = Boolean(quest.escrowTxHash && quest.escrowContractAddress);
+
+    if (ESCROW_ENABLED && hasEscrowDeposit && verification.verified) {
+      const releaseResult = await releaseEscrow(quest.id, agentWallet, quest.bountyUsdc);
+      if (releaseResult.success && releaseResult.txHash) {
+        escrowReleaseTxHash = releaseResult.txHash;
+        console.log(`[escrow] Released quest ${quest.id} via contract. Tx: ${releaseResult.txHash}`);
+      } else {
+        console.warn(`[escrow] Contract release failed for quest ${quest.id}: ${releaseResult.error}`);
+        // Fall through to normal x402 recording
+      }
+    }
+
     // Record transaction in Turso regardless of on-chain status
-    const txStatus = verification.onChain ? "confirmed" : "pending";
+    const txStatus = verification.onChain || escrowReleaseTxHash ? "confirmed" : "pending";
     const tx = await storage.createTransaction({
       questId: quest.id,
       fromAgentId: quest.posterAgentId,
       toAgentId: quest.assignedAgentId ?? quest.posterAgentId,
       amountUsdc: quest.bountyUsdc,
-      protocol: "x402",
+      protocol: escrowReleaseTxHash ? "escrow" : "x402",
       network: sig.network || "base",
       status: txStatus,
-      txHash: verification.txHash ?? undefined,
+      txHash: escrowReleaseTxHash ?? verification.txHash ?? undefined,
+      escrowReleaseTxHash: escrowReleaseTxHash,
     });
 
-    // Mark quest completed if payment verified on-chain
-    if (verification.onChain) {
+    // Mark quest completed if payment is confirmed (escrow or on-chain)
+    if (txStatus === "confirmed") {
       await storage.updateQuest(quest.id, { status: "completed" });
       // Track volume against the API key
       await storage.trackApiKeyVolume(apiKey.key, quest.bountyUsdc);
@@ -307,11 +422,13 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
     return res.json({
       success: true,
-      onChain: verification.onChain,
+      onChain: verification.onChain || Boolean(escrowReleaseTxHash),
+      escrow: Boolean(escrowReleaseTxHash),
       status: txStatus,
       transaction: {
         id: tx.id,
-        txHash: verification.txHash,
+        txHash: escrowReleaseTxHash ?? verification.txHash,
+        escrowReleaseTxHash: escrowReleaseTxHash ?? null,
         totalBounty: quest.bountyUsdc,
         agentPayout: verification.agentPayout,
         platformFee: verification.platformFee,
@@ -320,7 +437,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
       quest: {
         id: quest.id,
         title: quest.title,
-        status: verification.onChain ? "completed" : quest.status,
+        status: txStatus === "confirmed" ? "completed" : quest.status,
       },
       ...(verification.error ? { warning: verification.error } : {}),
     });

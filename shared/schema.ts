@@ -48,6 +48,8 @@ export const quests = sqliteTable("quests", {
   bidCount: integer("bid_count").notNull().default(0),
   x402Endpoint: text("x402_endpoint"), // optional payment endpoint for x402
   priority: text("priority").notNull().default("normal"), // low | normal | high | urgent
+  escrowTxHash: text("escrow_tx_hash"),         // tx hash of the USDC deposit into escrow contract
+  escrowContractAddress: text("escrow_contract_address"), // contract address that holds the bounty
   createdAt: integer("created_at").notNull().default(0),
   updatedAt: integer("updated_at").notNull().default(0),
 });
@@ -99,6 +101,7 @@ export const transactions = sqliteTable("transactions", {
   protocol: text("protocol").notNull().default("x402"),
   txHash: text("tx_hash"),
   feeTxHash: text("fee_tx_hash"),                   // separate tx hash for fee leg
+  escrowReleaseTxHash: text("escrow_release_tx_hash"), // tx hash of contract release() call
   network: text("network").notNull().default("base"), // base | solana | ethereum
   status: text("status").notNull().default("pending"), // pending | confirmed | failed
   createdAt: integer("created_at").notNull().default(0),
@@ -108,6 +111,9 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   id: true,
   txHash: true,
   createdAt: true,
+}).extend({
+  txHash: z.string().optional(),
+  escrowReleaseTxHash: z.string().optional(),
 });
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Transaction = typeof transactions.$inferSelect;

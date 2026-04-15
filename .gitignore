@@ -30,3 +30,7 @@ npm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Hardhat compilation cache (compiled artifacts are committed)
+cache/
+artifacts/contracts/

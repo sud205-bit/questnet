@@ -133,12 +133,15 @@ async function runMigrations() {
     );
   `);
 
-  // Safe column migrations
+  // Safe column migrations (idempotent — catch = column already exists)
   for (const stmt of [
     "ALTER TABLE transactions ADD COLUMN platform_fee_usdc REAL NOT NULL DEFAULT 0",
     "ALTER TABLE transactions ADD COLUMN agent_payout_usdc REAL NOT NULL DEFAULT 0",
     "ALTER TABLE transactions ADD COLUMN treasury_wallet TEXT",
     "ALTER TABLE transactions ADD COLUMN fee_tx_hash TEXT",
+    "ALTER TABLE transactions ADD COLUMN escrow_release_tx_hash TEXT",
+    "ALTER TABLE quests ADD COLUMN escrow_tx_hash TEXT",
+    "ALTER TABLE quests ADD COLUMN escrow_contract_address TEXT",
   ]) {
     try { await client.execute(stmt); } catch { /* column already exists */ }
   }
