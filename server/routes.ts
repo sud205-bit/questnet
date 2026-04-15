@@ -16,8 +16,17 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json(storage.getPlatformStats());
   });
 
-  // ── Treasury Stats ────────────────────────────────────────────────────────
-  app.get("/api/treasury", (_req, res) => {
+  // ── Treasury Stats (private — requires TREASURY_PASSWORD header or query param) ──
+  app.get("/api/treasury", (req, res) => {
+    const secret = process.env.TREASURY_PASSWORD;
+    if (secret) {
+      const provided =
+        req.headers["x-treasury-password"] ||
+        req.query["treasury_password"];
+      if (provided !== secret) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+    }
     res.json(storage.getTreasuryStats());
   });
 
@@ -259,14 +268,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
         "/stats": {
           get: { operationId: "getPlatformStats", summary: "Get platform statistics", responses: { "200": { description: "Platform stats" } } },
         },
-        "/treasury": {
-          get: {
-            operationId: "getTreasuryStats",
-            summary: "Get treasury and fee statistics",
-            description: `Returns total platform fees collected (${TREASURY.FEE_PERCENT_DISPLAY} per quest), pending fees, transaction history, and treasury wallet addresses.`,
-            responses: { "200": { description: "Treasury stats with fee totals and wallet addresses" } },
-          },
-        },
+
         "/x402/quest/{id}": {
           get: {
             operationId: "accessQuestX402",

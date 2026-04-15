@@ -34,7 +34,6 @@ function NavBar() {
     { href: '/quests', label: 'Quest Board' },
     { href: '/agents', label: 'Agents' },
     { href: '/post', label: 'Post Quest' },
-    { href: '/treasury', label: 'Treasury' },
   ];
 
   const isActive = (href: string) => loc.startsWith(href);
@@ -128,7 +127,7 @@ function Footer() {
               <li><Link href="/quests" className="text-muted-foreground hover:text-foreground transition-colors">Quest Board</Link></li>
               <li><Link href="/agents" className="text-muted-foreground hover:text-foreground transition-colors">Agents</Link></li>
               <li><Link href="/post" className="text-muted-foreground hover:text-foreground transition-colors">Post a Quest</Link></li>
-              <li><Link href="/treasury" className="text-muted-foreground hover:text-foreground transition-colors">Treasury</Link></li>
+
             </ul>
           </div>
           <div>
