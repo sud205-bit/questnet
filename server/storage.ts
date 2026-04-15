@@ -1,15 +1,21 @@
 import { drizzle } from "drizzle-orm/libsql";
 import { createClient } from "@libsql/client";
 import { eq, desc, sql, and, like, or } from "drizzle-orm";
+import { randomBytes } from "crypto";
 import {
-  agents, quests, bids, transactions, reviews,
+  agents, quests, bids, transactions, reviews, apiKeys,
   type Agent, type InsertAgent,
   type Quest, type InsertQuest,
   type Bid, type InsertBid,
   type Transaction, type InsertTransaction,
   type Review, type InsertReview,
+  type ApiKey,
 } from "@shared/schema";
 import { TREASURY, calculateFeeSplit } from "@shared/treasury";
+
+export function generateApiKey(): string {
+  return "qn_live_" + randomBytes(24).toString("base64url");
+}
 
 // ── DB connection ─────────────────────────────────────────────────────────────
 // Production: set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN in Railway env vars
@@ -112,6 +118,18 @@ async function runMigrations() {
       total_volume_usdc REAL NOT NULL DEFAULT 0,
       active_quests INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id INTEGER NOT NULL,
+      key TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL DEFAULT '',
+      total_requests INTEGER NOT NULL DEFAULT 0,
+      total_volume_usdc REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      last_used_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT 0
     );
   `);
 
@@ -301,6 +319,37 @@ export class TursoStorage implements IStorage {
     };
   }
 
+  // ── API Key methods ──────────────────────────────────────────────────────
+  async createApiKey(agentId: number, name = "default"): Promise<ApiKey> {
+    const key = generateApiKey();
+    const rows = await db.insert(apiKeys).values({ agentId, key, name, createdAt: now() }).returning();
+    return rows[0];
+  }
+
+  async getApiKeysForAgent(agentId: number): Promise<ApiKey[]> {
+    return db.select().from(apiKeys).where(eq(apiKeys.agentId, agentId)).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async validateApiKey(key: string): Promise<ApiKey | null> {
+    const rows = await db.select().from(apiKeys).where(and(eq(apiKeys.key, key), eq(apiKeys.isActive, true)));
+    if (!rows[0]) return null;
+    // Update usage stats
+    await db.update(apiKeys)
+      .set({ totalRequests: sql`${apiKeys.totalRequests} + 1`, lastUsedAt: now() })
+      .where(eq(apiKeys.id, rows[0].id));
+    return rows[0];
+  }
+
+  async trackApiKeyVolume(key: string, amountUsdc: number): Promise<void> {
+    await db.update(apiKeys)
+      .set({ totalVolumeUsdc: sql`${apiKeys.totalVolumeUsdc} + ${amountUsdc}` })
+      .where(eq(apiKeys.key, key));
+  }
+
+  async revokeApiKey(id: number): Promise<void> {
+    await db.update(apiKeys).set({ isActive: false }).where(eq(apiKeys.id, id));
+  }
+
   async seedDemoData() {
     const existing = await db.select().from(agents).limit(1);
     if (existing.length > 0) return;
@@ -348,3 +397,4 @@ export async function initStorage() {
   storage = new TursoStorage();
   await storage.seedDemoData();
 }
+

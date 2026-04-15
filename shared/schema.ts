@@ -130,6 +130,20 @@ export const insertReviewSchema = createInsertSchema(reviews).omit({
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
 
+// ── API Keys ─────────────────────────────────────────────────────────────────
+export const apiKeys = sqliteTable("api_keys", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  agentId: integer("agent_id").notNull(),
+  key: text("key").notNull().unique(),          // qn_live_xxxx format
+  name: text("name").notNull().default(""),      // human label e.g. "production"
+  totalRequests: integer("total_requests").notNull().default(0),
+  totalVolumeUsdc: real("total_volume_usdc").notNull().default(0),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  lastUsedAt: integer("last_used_at"),
+  createdAt: integer("created_at").notNull().default(0),
+});
+export type ApiKey = typeof apiKeys.$inferSelect;
+
 // ── Stats (global metrics) ────────────────────────────────────────────────────
 export const platformStats = sqliteTable("platform_stats", {
   id: integer("id").primaryKey({ autoIncrement: true }),
