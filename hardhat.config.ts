@@ -1,5 +1,4 @@
 import type { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-ethers";
 
 const RESOLVER_PRIVATE_KEY = process.env.RESOLVER_PRIVATE_KEY || "0x" + "a".repeat(64);
 const BASE_RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";

@@ -1,79 +1,118 @@
 /**
- * QuestEscrow Deployment Script (Hardhat 3 compatible)
+ * QuestEscrow Deployment Script — uses viem directly (no hardhat-ethers needed)
  *
  * Usage (PowerShell):
  *   $env:RESOLVER_PRIVATE_KEY="0x..."
  *   $env:BASE_RPC_URL="https://mainnet.base.org"
- *   npx hardhat run scripts/deploy.ts --network base
+ *   npx tsx scripts/deploy.ts
  *
  * Usage (Command Prompt):
  *   set RESOLVER_PRIVATE_KEY=0x...
  *   set BASE_RPC_URL=https://mainnet.base.org
- *   npx hardhat run scripts/deploy.ts --network base
- *
- * After deployment, add to Railway:
- *   ESCROW_CONTRACT_ADDRESS=<deployed address>
- *   RESOLVER_PRIVATE_KEY=<same key used here>
+ *   npx tsx scripts/deploy.ts
  */
 
-import hre from "hardhat";
+import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem";
+import { base } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-// ── Addresses ─────────────────────────────────────────────────────────────────
-const USDC_BASE_MAINNET = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
-const TREASURY_WALLET   = "0x2D6d4E1E97C95007732C7E9B54931aAC08345967";
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// ── Config ────────────────────────────────────────────────────────────────────
+const PRIVATE_KEY   = process.env.RESOLVER_PRIVATE_KEY as `0x${string}`;
+const BASE_RPC_URL  = process.env.BASE_RPC_URL || "https://mainnet.base.org";
+
+const USDC_BASE     = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const TREASURY      = "0x2D6d4E1E97C95007732C7E9B54931aAC08345967";
+
+if (!PRIVATE_KEY) {
+  console.error("❌ RESOLVER_PRIVATE_KEY env var is required");
+  process.exit(1);
+}
+
+// ── Load compiled artifact ────────────────────────────────────────────────────
+const artifact = JSON.parse(
+  readFileSync(join(__dirname, "../artifacts/QuestEscrow.json"), "utf8")
+);
+const abi      = artifact.abi;
+const bytecode = artifact.bytecode as `0x${string}`;
+
+// ── Clients ───────────────────────────────────────────────────────────────────
+const account = privateKeyToAccount(PRIVATE_KEY);
+
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http(BASE_RPC_URL),
+});
+
+const walletClient = createWalletClient({
+  account,
+  chain: base,
+  transport: http(BASE_RPC_URL),
+});
+
+// ── Deploy ────────────────────────────────────────────────────────────────────
 async function main() {
-  const { ethers } = hre as any;
-
-  const [deployer] = await ethers.getSigners();
-  const network = await ethers.provider.getNetwork();
-  const chainId = Number(network.chainId);
-
   console.log("─────────────────────────────────────────────");
   console.log("QuestEscrow Deployment");
-  console.log(`Network:   ${network.name} (chainId: ${chainId})`);
-  console.log(`Deployer:  ${deployer.address}`);
+  console.log(`Network:   Base Mainnet`);
+  console.log(`Deployer:  ${account.address}`);
 
-  const balance = await ethers.provider.getBalance(deployer.address);
-  console.log(`Balance:   ${ethers.formatEther(balance)} ETH`);
+  const balance = await publicClient.getBalance({ address: account.address });
+  console.log(`Balance:   ${formatEther(balance)} ETH`);
   console.log("─────────────────────────────────────────────");
 
   if (balance === 0n) {
-    throw new Error("Resolver wallet has 0 ETH. Fund it with ~$3 of ETH on Base first.");
+    console.error("❌ Resolver wallet has 0 ETH on Base. Fund it with ~$3 of ETH first.");
+    process.exit(1);
   }
 
-  const isMainnet   = chainId === 8453;
-  const usdcAddress = isMainnet ? USDC_BASE_MAINNET : USDC_BASE_SEPOLIA;
-  const resolver    = deployer.address;
-
-  console.log(`USDC:      ${usdcAddress}`);
-  console.log(`Treasury:  ${TREASURY_WALLET}`);
-  console.log(`Resolver:  ${resolver}`);
+  console.log(`USDC:      ${USDC_BASE}`);
+  console.log(`Treasury:  ${TREASURY}`);
+  console.log(`Resolver:  ${account.address}`);
   console.log();
-
-  const QuestEscrow = await ethers.getContractFactory("QuestEscrow");
   console.log("Deploying QuestEscrow...");
 
-  const escrow = await QuestEscrow.deploy(usdcAddress, TREASURY_WALLET, resolver);
-  await escrow.waitForDeployment();
+  // Encode constructor arguments: (address usdc, address treasury, address resolver)
+  const { encodeDeployData } = await import("viem");
+  const deployData = encodeDeployData({
+    abi,
+    bytecode,
+    args: [USDC_BASE, TREASURY, account.address],
+  });
 
-  const address  = await escrow.getAddress();
-  const deployTx = escrow.deploymentTransaction();
+  const txHash = await walletClient.sendTransaction({
+    data: deployData,
+  });
+
+  console.log(`Tx hash:   ${txHash}`);
+  console.log("Waiting for confirmation...");
+
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  if (!receipt.contractAddress) {
+    console.error("❌ Deploy failed — no contract address in receipt");
+    process.exit(1);
+  }
+
+  const contractAddress = receipt.contractAddress;
 
   console.log("─────────────────────────────────────────────");
   console.log(`✅ QuestEscrow deployed!`);
-  console.log(`   Contract:  ${address}`);
-  console.log(`   Tx hash:   ${deployTx?.hash}`);
-  console.log(`   BaseScan:  https://basescan.org/address/${address}`);
+  console.log(`   Contract:  ${contractAddress}`);
+  console.log(`   Tx hash:   ${txHash}`);
+  console.log(`   BaseScan:  https://basescan.org/address/${contractAddress}`);
   console.log("─────────────────────────────────────────────");
   console.log();
   console.log("Add these to Railway environment variables:");
-  console.log(`  ESCROW_CONTRACT_ADDRESS=${address}`);
-  console.log(`  RESOLVER_PRIVATE_KEY=${process.env.RESOLVER_PRIVATE_KEY}`);
+  console.log(`  ESCROW_CONTRACT_ADDRESS=${contractAddress}`);
+  console.log(`  RESOLVER_PRIVATE_KEY=${PRIVATE_KEY}`);
 }
 
 main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
+  console.error("❌", err.message || err);
+  process.exit(1);
 });
