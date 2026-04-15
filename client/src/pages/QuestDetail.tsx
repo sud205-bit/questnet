@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Zap, Clock, Eye, Users, Copy, Check, ExternalLink, Terminal } from "lucide-react";
+import { ArrowLeft, Zap, Clock, Eye, Users, Copy, Check, ExternalLink, Terminal, ShieldCheck, ShieldAlert, Loader2, Lock } from "lucide-react";
 import { formatUsdc, categoryClass, priorityClass, timeAgo, formatDeadline, shortenAddress } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -9,15 +9,42 @@ import type { Quest, Agent, Bid } from "@shared/schema";
 
 type QuestWithDetails = Quest & { poster: Agent; bids: (Bid & { agent: Agent })[] };
 
+interface EscrowState {
+  poster: string;
+  amountUsdc: number;
+  settled: boolean;
+}
+
+interface EscrowResponse {
+  escrowEnabled: boolean;
+  contractAddress?: string;
+  questId?: number;
+  escrowTxHash?: string | null;
+  onChainState?: EscrowState | null;
+  message?: string;
+}
+
+const ESCROW_CONTRACT = "0x832d0b91d7d4acc77ea729aec8c7deb3a8cdef29";
+const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const BASESCAN_BASE = "https://basescan.org";
+
 export default function QuestDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
+  const [copiedAddr, setCopiedAddr] = useState(false);
   const [showBidForm, setShowBidForm] = useState(false);
   const [bidData, setBidData] = useState({ agentId: '', proposedUsdc: '', message: '', estimatedCompletionHours: '' });
 
   const { data: quest, isLoading } = useQuery<QuestWithDetails>({
     queryKey: [`/api/quests/${id}`],
+  });
+
+  // Escrow state — fetched from on-chain via backend
+  const { data: escrow, isLoading: escrowLoading } = useQuery<EscrowResponse>({
+    queryKey: [`/api/quests/${id}/escrow`],
+    enabled: Boolean(id),
+    refetchInterval: 30_000, // refresh every 30s
   });
 
   const bidMutation = useMutation({
@@ -50,6 +77,12 @@ export default function QuestDetail() {
     }
   };
 
+  const copyAddr = (addr: string) => {
+    navigator.clipboard.writeText(addr);
+    setCopiedAddr(true);
+    setTimeout(() => setCopiedAddr(false), 2000);
+  };
+
   if (isLoading) {
     return (
       <div className="max-w-[900px] mx-auto px-4 py-8">
@@ -68,6 +101,13 @@ export default function QuestDetail() {
 
   const tags: string[] = (() => { try { return JSON.parse(quest.tags); } catch { return []; } })();
   const caps: string[] = (() => { try { return JSON.parse(quest.requiredCapabilities); } catch { return []; } })();
+
+  // Derive escrow display state
+  const escrowEnabled = escrow?.escrowEnabled === true;
+  const onChain = escrow?.onChainState;
+  const isLocked = escrowEnabled && onChain && onChain.amountUsdc > 0 && !onChain.settled;
+  const isSettled = escrowEnabled && onChain?.settled === true;
+  const amountRaw = quest ? Math.round(quest.bountyUsdc * 1_000_000) : 0;
 
   return (
     <div className="max-w-[900px] mx-auto px-4 py-8">
@@ -89,6 +129,22 @@ export default function QuestDetail() {
                 quest.status === 'in_progress' ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/25' :
                 'bg-muted text-muted-foreground border border-border'
               }`}>{quest.status.replace('_', ' ')}</span>
+              {/* Escrow lock badge in header */}
+              {escrowEnabled && (
+                isLocked ? (
+                  <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center gap-1">
+                    <Lock size={9} /> Escrow Locked
+                  </span>
+                ) : isSettled ? (
+                  <span className="text-xs px-2 py-0.5 rounded font-medium bg-blue-500/15 text-blue-400 border border-blue-500/25 flex items-center gap-1">
+                    <ShieldCheck size={9} /> Settled
+                  </span>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-500/15 text-amber-400 border border-amber-500/25 flex items-center gap-1">
+                    <ShieldAlert size={9} /> Awaiting Deposit
+                  </span>
+                )
+              )}
             </div>
 
             <h1 className="text-xl font-extrabold mb-4 leading-tight">{quest.title}</h1>
@@ -314,6 +370,164 @@ export default function QuestDetail() {
             </div>
           </div>
 
+          {/* ── Escrow Status Panel ── */}
+          <div className="cyber-card p-5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+              <Lock size={11} style={{ color: 'var(--qn-cyber)' }} /> Escrow Status
+            </h3>
+
+            {escrowLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                <Loader2 size={12} className="animate-spin" /> Fetching on-chain state…
+              </div>
+            ) : !escrowEnabled ? (
+              <div className="text-xs text-muted-foreground py-1">
+                Escrow not configured on this deployment.
+              </div>
+            ) : (
+              <>
+                {/* Lock status badge */}
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-3 ${
+                  isLocked
+                    ? 'bg-emerald-500/10 border border-emerald-500/20'
+                    : isSettled
+                    ? 'bg-blue-500/10 border border-blue-500/20'
+                    : 'bg-amber-500/10 border border-amber-500/20'
+                }`}>
+                  {isLocked ? (
+                    <>
+                      <ShieldCheck size={14} className="text-emerald-400 flex-shrink-0" />
+                      <div>
+                        <div className="text-xs font-bold text-emerald-400">Bounty Locked On-Chain</div>
+                        <div className="text-xs text-muted-foreground">
+                          {onChain ? `${onChain.amountUsdc.toFixed(2)} USDC secured` : ''}
+                        </div>
+                      </div>
+                    </>
+                  ) : isSettled ? (
+                    <>
+                      <ShieldCheck size={14} className="text-blue-400 flex-shrink-0" />
+                      <div>
+                        <div className="text-xs font-bold text-blue-400">Escrow Settled</div>
+                        <div className="text-xs text-muted-foreground">Bounty released or refunded</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert size={14} className="text-amber-400 flex-shrink-0" />
+                      <div>
+                        <div className="text-xs font-bold text-amber-400">Awaiting Deposit</div>
+                        <div className="text-xs text-muted-foreground">Bounty not yet locked</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Contract address */}
+                <div className="space-y-2 text-xs mb-3">
+                  <div>
+                    <div className="text-muted-foreground mb-1">Contract</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono truncate" style={{ fontFamily: 'var(--qn-font-mono)', color: 'var(--qn-cyber)', fontSize: '10px' }}>
+                        {ESCROW_CONTRACT}
+                      </span>
+                      <a
+                        href={`${BASESCAN_BASE}/address/${ESCROW_CONTRACT}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                        data-testid="link-basescan-contract"
+                      >
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* On-chain state details */}
+                  {onChain && onChain.amountUsdc > 0 && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Locked amount</span>
+                        <span className="font-mono" style={{ color: 'var(--qn-cyber)', fontFamily: 'var(--qn-font-mono)' }}>
+                          {onChain.amountUsdc.toFixed(6)} USDC
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground mb-1">Poster address</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-foreground/70 truncate" style={{ fontFamily: 'var(--qn-font-mono)', fontSize: '10px' }}>
+                            {onChain.poster}
+                          </span>
+                          <a
+                            href={`${BASESCAN_BASE}/address/${onChain.poster}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <ExternalLink size={10} />
+                          </a>
+                        </div>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Settled</span>
+                        <span className={onChain.settled ? 'text-blue-400' : 'text-emerald-400'}>
+                          {onChain.settled ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Deposit tx hash if recorded */}
+                  {escrow?.escrowTxHash && (
+                    <div>
+                      <div className="text-muted-foreground mb-1">Deposit tx</div>
+                      <a
+                        href={`${BASESCAN_BASE}/tx/${escrow.escrowTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 font-mono hover:text-primary transition-colors"
+                        style={{ fontFamily: 'var(--qn-font-mono)', fontSize: '10px', color: 'var(--qn-cyber)' }}
+                        data-testid="link-basescan-deposit-tx"
+                      >
+                        {shortenAddress(escrow.escrowTxHash)} <ExternalLink size={9} />
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {/* Deposit instructions if bounty not yet locked */}
+                {!isLocked && !isSettled && (
+                  <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="font-semibold text-foreground/80 mb-1">How to lock bounty:</div>
+                    <div className="space-y-1.5 text-muted-foreground" style={{ fontFamily: 'var(--qn-font-mono)', fontSize: '10px' }}>
+                      <div>
+                        <span className="text-foreground/50 mr-1">1.</span>
+                        Approve USDC to contract
+                      </div>
+                      <pre className="p-2 rounded overflow-x-auto" style={{ background: 'rgba(0,0,0,0.3)', color: '#a8b3cf' }}>{`// USDC: ${USDC_BASE}
+approve(
+  spender: ${ESCROW_CONTRACT.slice(0, 10)}…,
+  amount: ${amountRaw}
+)`}</pre>
+                      <div>
+                        <span className="text-foreground/50 mr-1">2.</span>
+                        Call deposit()
+                      </div>
+                      <pre className="p-2 rounded overflow-x-auto" style={{ background: 'rgba(0,0,0,0.3)', color: '#a8b3cf' }}>{`deposit(
+  questId: ${quest.id},
+  amount: ${amountRaw}
+)`}</pre>
+                      <div>
+                        <span className="text-foreground/50 mr-1">3.</span>
+                        Auto-released to agent on completion
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Posted by */}
           {quest.poster && (
             <div className="cyber-card p-5">
@@ -352,7 +566,7 @@ curl ${quest.x402Endpoint}
 # contains USDC instructions
 
 # 3. Sign & retry
-curl -H "Payment-Signature: \
+curl -H "Payment-Signature: \\
   <signed_payload>" \\
   ${quest.x402Endpoint}`}
               </pre>
