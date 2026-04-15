@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── QuestNet Design System — Dark-first cyberpunk/agent aesthetic ── */
+
+:root,
+[data-theme='light'] {
+  --background: 220 15% 97%;
+  --foreground: 220 20% 8%;
+  --card: 220 14% 96%;
+  --card-foreground: 220 20% 8%;
+  --popover: 220 14% 96%;
+  --popover-foreground: 220 20% 8%;
+  --primary: 170 85% 40%;
+  --primary-foreground: 220 20% 5%;
+  --secondary: 220 10% 88%;
+  --secondary-foreground: 220 20% 15%;
+  --muted: 220 10% 92%;
+  --muted-foreground: 220 10% 45%;
+  --accent: 170 70% 92%;
+  --accent-foreground: 170 85% 20%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 220 12% 88%;
+  --input: 220 12% 88%;
+  --ring: 170 85% 40%;
+  --radius: 0.5rem;
+  --sidebar-background: 220 14% 93%;
+  --sidebar-foreground: 220 20% 8%;
+  --sidebar-primary: 170 85% 40%;
+  --sidebar-primary-foreground: 220 20% 5%;
+  --sidebar-accent: 220 10% 88%;
+  --sidebar-accent-foreground: 220 20% 15%;
+  --sidebar-border: 220 12% 85%;
+  --sidebar-ring: 170 85% 40%;
+  --chart-1: 170 85% 40%;
+  --chart-2: 260 70% 65%;
+  --chart-3: 30 90% 55%;
+  --chart-4: 200 75% 55%;
+  --chart-5: 340 75% 55%;
+
+  /* Custom QuestNet tokens */
+  --qn-cyber: #00e5bf;
+  --qn-cyber-dim: rgba(0, 229, 191, 0.15);
+  --qn-violet: #7c3aed;
+  --qn-amber: #f59e0b;
+  --qn-font-display: 'Cabinet Grotesk', system-ui, sans-serif;
+  --qn-font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+}
+
+[data-theme='dark'] {
+  --background: 222 25% 7%;
+  --foreground: 210 20% 88%;
+  --card: 222 22% 10%;
+  --card-foreground: 210 20% 88%;
+  --popover: 222 22% 10%;
+  --popover-foreground: 210 20% 88%;
+  --primary: 170 90% 45%;
+  --primary-foreground: 220 25% 5%;
+  --secondary: 222 18% 16%;
+  --secondary-foreground: 210 15% 75%;
+  --muted: 222 18% 13%;
+  --muted-foreground: 215 12% 48%;
+  --accent: 222 20% 18%;
+  --accent-foreground: 170 80% 65%;
+  --destructive: 0 65% 55%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 222 18% 18%;
+  --input: 222 18% 18%;
+  --ring: 170 90% 45%;
+  --sidebar-background: 222 25% 6%;
+  --sidebar-foreground: 210 20% 88%;
+  --sidebar-primary: 170 90% 45%;
+  --sidebar-primary-foreground: 220 25% 5%;
+  --sidebar-accent: 222 18% 13%;
+  --sidebar-accent-foreground: 210 20% 80%;
+  --sidebar-border: 222 18% 15%;
+  --sidebar-ring: 170 90% 45%;
+  --chart-1: 170 90% 45%;
+  --chart-2: 260 70% 70%;
+  --chart-3: 30 90% 60%;
+  --chart-4: 200 75% 60%;
+  --chart-5: 340 75% 60%;
+
+  --qn-cyber: #00e5bf;
+  --qn-cyber-dim: rgba(0, 229, 191, 0.12);
+  --qn-violet: #a78bfa;
+  --qn-amber: #fbbf24;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: 222 25% 7%;
+    --foreground: 210 20% 88%;
+    --card: 222 22% 10%;
+    --card-foreground: 210 20% 88%;
+    --popover: 222 22% 10%;
+    --popover-foreground: 210 20% 88%;
+    --primary: 170 90% 45%;
+    --primary-foreground: 220 25% 5%;
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 210 15% 75%;
+    --muted: 222 18% 13%;
+    --muted-foreground: 215 12% 48%;
+    --accent: 222 20% 18%;
+    --accent-foreground: 170 80% 65%;
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 18% 18%;
+    --input: 222 18% 18%;
+    --ring: 170 90% 45%;
+    --sidebar-background: 222 25% 6%;
+    --sidebar-foreground: 210 20% 88%;
+    --sidebar-primary: 170 90% 45%;
+    --sidebar-primary-foreground: 220 25% 5%;
+    --sidebar-accent: 222 18% 13%;
+    --sidebar-accent-foreground: 210 20% 80%;
+    --sidebar-border: 222 18% 15%;
+    --sidebar-ring: 170 90% 45%;
+  }
+}
+
+/* ── Base Reset ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  scroll-padding-top: 4rem;
+}
+
+body {
+  min-height: 100dvh;
+  font-family: var(--qn-font-display);
+  font-size: 1rem;
+  line-height: 1.6;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  transition: background-color 200ms, color 200ms;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--qn-font-display);
+  font-weight: 700;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+p, li, figcaption { text-wrap: pretty; max-width: 72ch; }
+
+img, picture, video, canvas, svg { display: block; max-width: 100%; }
+
+input, button, textarea, select { font: inherit; color: inherit; }
+
+button { cursor: pointer; background: none; border: none; }
+
+::selection {
+  background: rgba(0, 229, 191, 0.25);
+  color: hsl(var(--foreground));
+}
+
+:focus-visible {
+  outline: 2px solid var(--qn-cyber);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ── QuestNet Custom Classes ─────────────────────────── */
+
+.font-mono { font-family: var(--qn-font-mono); }
+
+.cyber-glow {
+  text-shadow: 0 0 20px rgba(0, 229, 191, 0.5);
+  color: var(--qn-cyber);
+}
+
+.cyber-border {
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 0 0 1px rgba(0, 229, 191, 0.05), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.cyber-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  transition: border-color 200ms, box-shadow 200ms;
+}
+
+.cyber-card:hover {
+  border-color: rgba(0, 229, 191, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 229, 191, 0.15), 0 8px 24px rgba(0,0,0,0.25);
+}
+
+.quest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--qn-cyber), transparent);
+}
+
+/* Priority badges */
+.priority-urgent { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+.priority-high { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25); }
+.priority-normal { background: rgba(99, 102, 241, 0.12); color: #a78bfa; border: 1px solid rgba(99, 102, 241, 0.25); }
+.priority-low { background: rgba(107, 114, 128, 0.12); color: #9ca3af; border: 1px solid rgba(107, 114, 128, 0.2); }
+
+/* Category badges */
+.cat-data { background: rgba(0, 229, 191, 0.12); color: var(--qn-cyber); border: 1px solid rgba(0, 229, 191, 0.25); }
+.cat-code { background: rgba(124, 58, 237, 0.12); color: var(--qn-violet); border: 1px solid rgba(124, 58, 237, 0.25); }
+.cat-research { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); }
+.cat-trade { background: rgba(245, 158, 11, 0.12); color: var(--qn-amber); border: 1px solid rgba(245, 158, 11, 0.25); }
+.cat-compute { background: rgba(236, 72, 153, 0.12); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.25); }
+.cat-communication { background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25); }
+.cat-other { background: rgba(107, 114, 128, 0.12); color: #9ca3af; border: 1px solid rgba(107, 114, 128, 0.2); }
+
+/* Online indicator */
+.online-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--qn-cyber);
+  box-shadow: 0 0 6px var(--qn-cyber);
+  animation: pulse-online 2s ease-in-out infinite;
+}
+
+.offline-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+}
+
+@keyframes pulse-online {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.9); }
+}
+
+/* Animated scan line effect for hero */
+.scan-grid {
+  background-image:
+    linear-gradient(rgba(0, 229, 191, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 191, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: hsl(var(--background)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+
+/* Loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--accent)) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Ticker animation */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-inner {
+  display: flex;
+  animation: ticker 30s linear infinite;
+  width: max-content;
+}
+.ticker-inner:hover { animation-play-state: paused; }

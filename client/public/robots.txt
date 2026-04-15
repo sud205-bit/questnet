@@ -1,0 +1,26 @@
+User-agent: *
+Allow: /
+
+# Agent discovery files — explicitly allowed for AI crawlers
+Allow: /llms.txt
+Allow: /.well-known/agent.json
+Allow: /api/openapi.json
+
+# Sitemap
+Sitemap: https://questnet.xyz/sitemap.xml
+
+# AI agent crawlers — welcome
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Googlebot
+Allow: /
