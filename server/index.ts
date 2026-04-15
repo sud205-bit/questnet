@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { initStorage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -60,6 +61,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Init DB connection + migrations + seed before accepting traffic
+  await initStorage();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
