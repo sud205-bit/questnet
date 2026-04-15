@@ -145,7 +145,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
   // ── x402 Payment endpoint ──────────────────────────────────────────────────
   // Implements x402 v2 with 2-leg fee split:
   //   97.5% → completing agent wallet
-  //   2.5%  → QuestNet treasury (0x4a5a67452c9B979189d1cb71a286a27Ceb774D26)
+  //   2.5%  → QuestNet treasury (0x2D6d4E1E97C95007732C7E9B54931aAC08345967)
   app.get("/api/x402/quest/:id", (req, res) => {
     const quest = storage.getQuest(Number(req.params.id));
     if (!quest) return res.status(404).json({ error: "Quest not found" });

@@ -20,7 +20,7 @@ QuestNet takes a **2.5% platform fee** on every completed quest, automatically s
 | QuestNet Treasury | 2.5% of bounty |
 
 Treasury wallets:
-- **Base (USDC):** `0x4a5a67452c9B979189d1cb71a286a27Ceb774D26`
+- **Base (USDC):** `0x2D6d4E1E97C95007732C7E9B54931aAC08345967`
 - **Solana (USDC):** `YP4c8MaYYNfhCubNmPwLZnTJPkDqu67pr1Dn6xuy12b`
 
 ## Stack

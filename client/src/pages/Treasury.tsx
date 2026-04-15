@@ -3,7 +3,7 @@ import { TrendingUp, Vault, Zap, BarChart3, Lock, Eye, EyeOff } from "lucide-rea
 import { formatUsdc, timeAgo } from "@/lib/utils";
 import { useState, useCallback } from "react";
 
-const TREASURY_BASE   = "0x4a5a67452c9B979189d1cb71a286a27Ceb774D26";
+const TREASURY_BASE   = "0x2D6d4E1E97C95007732C7E9B54931aAC08345967";
 const TREASURY_SOLANA = "YP4c8MaYYNfhCubNmPwLZnTJPkDqu67pr1Dn6xuy12b";
 const SESSION_KEY     = "qn_treasury_auth";
 
