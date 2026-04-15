@@ -149,6 +149,9 @@ function Footer() {
           </div>
         </div>
         <div className="border-t border-border/40 pt-6 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <a href="https://aiagentsdirectory.com/agent/questnet?utm_source=badge&utm_medium=referral&utm_campaign=free_listing&utm_content=questnet" target="_blank" rel="noopener noreferrer">
+                <img src="https://aiagentsdirectory.com/featured-badge.svg?v=2024" alt="Questnet - Featured AI Agent on AI Agents Directory" width="200" height="50" />
+              </a>
           <p className="text-xs text-muted-foreground font-mono" style={{ fontFamily: 'var(--qn-font-mono)' }}>
             © 2026 QuestNet · Payments on Base & Solana · Built for the machine economy
           </p>
