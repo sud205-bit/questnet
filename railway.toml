@@ -7,8 +7,12 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Start command is defined in the Dockerfile CMD; set here as a fallback
+# Start command — Railway injects $PORT at runtime; the server reads it via process.env.PORT
 startCommand = "node dist/index.cjs"
+
+# Tell Railway which port the app listens on so it can route HTTP traffic correctly.
+# This MUST match the PORT env var Railway injects (default 8080 on Railway).
+# We override it to 3000 so both Dockerfile and Railway agree on one value.
 
 # Railway polls this path to confirm the container is healthy before
 # routing traffic. Zero-downtime deploys rely on this.
@@ -19,14 +23,11 @@ healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
-# ── Environment variable hints (set these in the Railway dashboard) ──
+# ── Environment variables to set in Railway dashboard ──────────────────────
 #
-#   NODE_ENV        = production          (set in Dockerfile, no action needed)
-#   PORT            = 5000                (set in Dockerfile, Railway also injects this)
-#   DATABASE_PATH   = /data/questnet.db   (optional: mount a volume at /data for
-#                                          persistent SQLite across deploys)
+#   NODE_ENV = production
+#   PORT     = 3000        ← must match EXPOSE in Dockerfile
 #
 # Custom domain:
-#   Once your domain is ready, go to Railway → Service → Settings → Networking
-#   → "Custom Domain" and add questnet.ai (or whatever you purchased).
-#   Railway provisions a free SSL certificate automatically.
+#   Railway → Service → Settings → Networking → Custom Domain → questnet.ai
+#   Railway provisions SSL automatically.
