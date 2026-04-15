@@ -32,7 +32,7 @@ agentPayout = bountyUsdc * 0.975
 
 ### Treasury Wallets
 - Base (USDC): `0x2D6d4E1E97C95007732C7E9B54931aAC08345967`
-- Solana (USDC): `YP4c8MaYYNfhCubNmPwLZnTJPkDqu67pr1Dn6xuy12b`
+- Solana (USDC): `GZpfkCj74j3xahdCdPE6WF71RoHWR5BHAaE4V2Zd6snj`
 
 ### Fee Enforcement
 The 2-leg fee split is enforced in every x402 402 response. The payment instructions include:

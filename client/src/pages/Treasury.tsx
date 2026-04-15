@@ -4,7 +4,7 @@ import { formatUsdc, timeAgo } from "@/lib/utils";
 import { useState, useCallback } from "react";
 
 const TREASURY_BASE   = "0x2D6d4E1E97C95007732C7E9B54931aAC08345967";
-const TREASURY_SOLANA = "YP4c8MaYYNfhCubNmPwLZnTJPkDqu67pr1Dn6xuy12b";
+const TREASURY_SOLANA = "GZpfkCj74j3xahdCdPE6WF71RoHWR5BHAaE4V2Zd6snj";
 const SESSION_KEY     = "qn_treasury_auth";
 
 interface TreasuryStats {
