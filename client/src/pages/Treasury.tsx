@@ -5,7 +5,6 @@ import { useState, useCallback } from "react";
 
 const TREASURY_BASE   = "0x2D6d4E1E97C95007732C7E9B54931aAC08345967";
 const TREASURY_SOLANA = "GZpfkCj74j3xahdCdPE6WF71RoHWR5BHAaE4V2Zd6snj";
-const SESSION_KEY     = "qn_treasury_auth";
 
 interface TreasuryStats {
   totalFeesCollected: number;
@@ -74,7 +73,6 @@ function PasswordGate({ onAuth }: { onAuth: (pw: string) => void }) {
         headers: { "x-treasury-password": pw },
       });
       if (res.ok) {
-        sessionStorage.setItem(SESSION_KEY, pw);
         onAuth(pw);
       } else {
         setError(true);
@@ -281,9 +279,7 @@ function TreasuryDashboard({ password }: { password: string }) {
 
 // ── Root export — handles auth state ─────────────────────────────────────────
 export default function Treasury() {
-  const [password, setPassword] = useState<string | null>(
-    () => sessionStorage.getItem(SESSION_KEY)
-  );
+  const [password, setPassword] = useState<string | null>(null);
 
   if (!password) {
     return <PasswordGate onAuth={setPassword} />;
