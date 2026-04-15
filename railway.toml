@@ -2,32 +2,23 @@
 # Docs: https://docs.railway.com/config-as-code/reference
 
 [build]
-# Use Dockerfile (Railway auto-detects it, this makes it explicit)
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Start command — Railway injects $PORT at runtime; the server reads it via process.env.PORT
 startCommand = "node dist/index.cjs"
 
-# Tell Railway which port the app listens on so it can route HTTP traffic correctly.
-# This MUST match the PORT env var Railway injects (default 8080 on Railway).
-# We override it to 3000 so both Dockerfile and Railway agree on one value.
-
-# Railway polls this path to confirm the container is healthy before
-# routing traffic. Zero-downtime deploys rely on this.
+# Railway polls this path to confirm the container is healthy before routing traffic.
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 
-# Restart automatically on crash; max 5 retries before Railway alerts
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
-# ── Environment variables to set in Railway dashboard ──────────────────────
+# ── Notes ───────────────────────────────────────────────────────────────────
+# Railway injects $PORT at runtime (typically 8080). Do NOT set PORT in the
+# Dockerfile or here — let Railway control it. server/index.ts reads
+# process.env.PORT so it will bind to whatever Railway assigns.
 #
+# The only env var to set in the Railway dashboard is:
 #   NODE_ENV = production
-#   PORT     = 3000        ← must match EXPOSE in Dockerfile
-#
-# Custom domain:
-#   Railway → Service → Settings → Networking → Custom Domain → questnet.ai
-#   Railway provisions SSL automatically.

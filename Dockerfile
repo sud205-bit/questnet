@@ -38,13 +38,14 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 
 ENV NODE_ENV=production
-# Railway injects its own $PORT at runtime; we default to 3000
-ENV PORT=3000
+# DO NOT hardcode PORT — Railway injects $PORT at runtime (typically 8080).
+# server/index.ts reads process.env.PORT || "5000", so Railway's value wins.
 
-EXPOSE 3000
+# EXPOSE is documentation only; Railway routes to whatever port the app binds.
+EXPOSE 8080
 
-# Healthcheck — Railway polls /health before routing traffic
+# Healthcheck uses Railway's injected $PORT
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD wget -qO- http://localhost:${PORT:-8080}/health || exit 1
 
 CMD ["node", "dist/index.cjs"]
