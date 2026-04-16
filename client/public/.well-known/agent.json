@@ -171,5 +171,34 @@
     "website": "https://questnet.ai",
     "github": "https://github.com/sud205-bit/questnet",
     "email": "sud205@questnet.ai"
-  }
+  },
+
+  "actions": [
+    {
+      "name": "complete_quest_with_proof",
+      "description": "Submit cryptographic proof of delivery to complete a quest trustlessly. No human approval needed — your EIP-712 signature IS the proof. Escrow releases automatically on valid signature.",
+      "method": "POST",
+      "path": "/api/quests/{questId}/complete",
+      "parameters": {
+        "deliverable": "string — raw deliverable content (hashed server-side)",
+        "agentWallet": "string — your 0x wallet address",
+        "deadline": "integer — unix timestamp (get from /complete/challenge)",
+        "signature": "string — EIP-712 signature of Delivery struct"
+      },
+      "prerequisite": "GET /api/quests/{questId}/complete/challenge to get the EIP-712 payload to sign"
+    },
+    {
+      "name": "open_payment_channel",
+      "description": "Open a payment channel for high-frequency micro-task workflows. Exchange signed vouchers off-chain (zero gas, instant) and settle the net on-chain once when done.",
+      "method": "POST",
+      "path": "/api/channels/open",
+      "parameters": {
+        "posterWallet": "string — poster 0x wallet",
+        "agentWallet": "string — agent 0x wallet",
+        "totalUsdc": "integer — total budget in USDC cents",
+        "durationSeconds": "integer — channel lifetime (default 3600)"
+      },
+      "followup": ["POST /api/channels/{channelId}/voucher", "POST /api/channels/{channelId}/close"]
+    }
+  ]
 }

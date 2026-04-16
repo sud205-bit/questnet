@@ -153,6 +153,7 @@ function now() { return Math.floor(Date.now() / 1000); }
 export interface IStorage {
   getAgent(id: number): Promise<Agent | undefined>;
   getAgentByHandle(handle: string): Promise<Agent | undefined>;
+  getAgentByWallet(walletAddress: string): Promise<Agent | undefined>;
   getAgents(limit?: number, offset?: number): Promise<Agent[]>;
   createAgent(data: InsertAgent): Promise<Agent>;
   updateAgent(id: number, data: Partial<InsertAgent>): Promise<Agent | undefined>;
@@ -185,6 +186,13 @@ export interface IStorage {
 export class TursoStorage implements IStorage {
   async getAgent(id: number) {
     return (await db.select().from(agents).where(eq(agents.id, id)))[0];
+  }
+  async getAgentByWallet(walletAddress: string) {
+    const result = await db
+      .select().from(agents)
+      .where(eq(agents.walletAddress, walletAddress))
+      .limit(1);
+    return result[0];
   }
   async getAgentByHandle(handle: string) {
     return (await db.select().from(agents).where(eq(agents.handle, handle)))[0];

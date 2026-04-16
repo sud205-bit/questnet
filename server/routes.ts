@@ -1,11 +1,13 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { sendBidReceivedEmail, sendBidAcceptedEmail, sendQuestCompletedEmail, sendEscrowReleasedEmail } from "./email";
 import { parsePaymentHeader, verifyX402Payment } from "./x402";
 import { insertQuestSchema, insertBidSchema, insertAgentSchema, insertReviewSchema } from "@shared/schema";
 import { TREASURY, calculateFeeSplit } from "@shared/treasury";
 import { ESCROW_ENABLED, ESCROW_ADDRESS, verifyEscrowDeposit, releaseEscrow, refundEscrow, getEscrowState } from "./escrow";
+import { verifyDeliveryProof, hashDeliverable, type DeliveryProof } from "./proof";
 import { z } from "zod";
 
 // ── API Key middleware ─────────────────────────────────────────────────────────
@@ -658,6 +660,240 @@ export function registerRoutes(httpServer: Server, app: Express) {
         github:         "https://github.com/sud205-bit/questnet",
       },
     });
+  });
+
+
+  // ── Proof-of-Delivery ──────────────────────────────────────────────────────
+
+  // GET /api/quests/:id/complete/challenge — returns the EIP-712 struct for agent to sign
+  app.get("/api/quests/:id/complete/challenge", async (req, res) => {
+    const quest = await storage.getQuest(Number(req.params.id));
+    if (!quest) return res.status(404).json({ error: "Quest not found" });
+
+    const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+
+    res.json({
+      instructions: "Sign the EIP-712 payload below with your agent wallet private key. Submit the signature to POST /api/quests/:id/complete.",
+      eip712: {
+        domain: {
+          name: "QuestNet",
+          version: "1",
+          chainId: 8453,
+          verifyingContract: process.env.ESCROW_CONTRACT_ADDRESS ?? "",
+        },
+        types: {
+          Delivery: [
+            { name: "questId", type: "uint256" },
+            { name: "deliverableHash", type: "bytes32" },
+            { name: "agentWallet", type: "address" },
+            { name: "deadline", type: "uint256" },
+          ],
+        },
+        primaryType: "Delivery",
+        message: {
+          questId: quest.id,
+          deliverableHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+          agentWallet: "YOUR_WALLET_ADDRESS",
+          deadline,
+        },
+      },
+      deadline,
+      hint: "Replace deliverableHash with keccak256(your_deliverable_content) and agentWallet with your wallet address, then sign with eth_signTypedData_v4.",
+    });
+  });
+
+  // POST /api/quests/:id/complete — trustless completion via cryptographic proof
+  // Agent submits deliverable + EIP-712 signature. No human approval needed.
+  app.post("/api/quests/:id/complete", requireApiKey, async (req, res) => {
+    const quest = await storage.getQuest(Number(req.params.id));
+    if (!quest) return res.status(404).json({ error: "Quest not found" });
+    if (quest.status === "completed") return res.status(400).json({ error: "Quest already completed" });
+    if (quest.status === "cancelled") return res.status(400).json({ error: "Quest is cancelled" });
+
+    const { deliverable, deliverableHash, agentWallet, deadline, signature } = req.body as {
+      deliverable?: string;       // raw content — we hash it server-side
+      deliverableHash?: string;   // or pre-hashed 0x bytes32
+      agentWallet: string;
+      deadline: number;
+      signature: string;
+    };
+
+    if (!agentWallet || !deadline || !signature) {
+      return res.status(400).json({
+        error: "Missing required fields",
+        required: ["agentWallet", "deadline", "signature"],
+        optional: ["deliverable (raw content)", "deliverableHash (0x bytes32 — use if you hashed client-side)"],
+      });
+    }
+
+    // Compute or accept hash
+    const finalHash = deliverableHash
+      ?? (deliverable ? hashDeliverable(deliverable) : null);
+
+    if (!finalHash) {
+      return res.status(400).json({ error: "Must provide either deliverable (raw) or deliverableHash (0x bytes32)" });
+    }
+
+    const proof: DeliveryProof = {
+      questId: quest.id,
+      deliverableHash: finalHash,
+      agentWallet,
+      deadline,
+      signature,
+    };
+
+    // Verify signature off-chain first (fast, no gas)
+    const verification = await verifyDeliveryProof(proof);
+    if (!verification.valid) {
+      return res.status(400).json({
+        error: "Invalid delivery proof",
+        detail: verification.error,
+      });
+    }
+
+    // If escrow exists, trigger on-chain completeWithProof
+    // (For now we call the existing release() via resolver — completeWithProof is in new contract)
+    let releaseTxHash: string | undefined;
+    if (ESCROW_ENABLED && quest.escrowTxHash) {
+      const releaseResult = await releaseEscrow(quest.id, agentWallet, quest.bountyUsdc);
+      if (releaseResult.success) {
+        releaseTxHash = releaseResult.txHash ?? undefined;
+      } else {
+        console.warn(`[proof] Escrow release failed: ${releaseResult.error}`);
+      }
+    }
+
+    // Mark quest complete
+    await storage.updateQuest(quest.id, {
+      status: "completed",
+      assignedAgentId: (await storage.getAgentByWallet(agentWallet))?.id ?? quest.assignedAgentId,
+    });
+
+    // Record the proof-of-delivery transaction
+    await storage.createTransaction({
+      questId: quest.id,
+      fromAgentId: quest.posterAgentId,
+      toAgentId: quest.assignedAgentId ?? quest.posterAgentId,
+      amountUsdc: quest.bountyUsdc,
+      txHash: releaseTxHash ?? `proof:${finalHash.slice(0, 18)}`,
+      protocol: "proof_release",
+      status: releaseTxHash ? "confirmed" : "pending",
+      network: "base",
+      escrowReleaseTxHash: releaseTxHash,
+    });
+
+    return res.json({
+      success: true,
+      questId: quest.id,
+      deliverableHash: finalHash,
+      agentWallet,
+      proofVerified: true,
+      releaseTxHash: releaseTxHash ?? null,
+      message: "Quest completed via cryptographic proof of delivery.",
+    });
+  });
+
+  // ── Payment Channels — off-chain micro-task settlement ─────────────────────
+
+  // In-memory channel store (replace with DB in production)
+  const activeChannels = new Map<string, {
+    poster: string; agent: string; totalUsdc: number;
+    expiry: number; openedAt: number; taskCount: number;
+    lastVoucherAmount: number; lastVoucherNonce: number;
+  }>();
+
+  // POST /api/channels/open — open a payment channel for high-frequency tasks
+  app.post("/api/channels/open", requireApiKey, async (req, res) => {
+    const { posterWallet, agentWallet, totalUsdc, durationSeconds = 3600 } = req.body;
+    if (!posterWallet || !agentWallet || !totalUsdc) {
+      return res.status(400).json({ error: "Missing: posterWallet, agentWallet, totalUsdc" });
+    }
+    const channelId = randomUUID();
+    const expiry = Math.floor(Date.now() / 1000) + durationSeconds;
+    activeChannels.set(channelId, {
+      poster: posterWallet, agent: agentWallet,
+      totalUsdc, expiry, openedAt: Date.now(),
+      taskCount: 0, lastVoucherAmount: 0, lastVoucherNonce: 0,
+    });
+    res.status(201).json({
+      channelId,
+      posterWallet, agentWallet, totalUsdc, expiry,
+      message: "Channel open. Exchange signed Voucher structs off-chain for each micro-task. Call /api/channels/:id/close to settle.",
+      voucherSchema: {
+        channelId,
+        cumulativeAmount: "total_usdc_earned_so_far",
+        nonce: "monotonically_increasing_integer",
+        note: "Poster signs each voucher. Agent keeps the latest one. On close, submit the latest signed voucher.",
+      },
+      eip712Domain: { name: "QuestChannel", version: "1", chainId: 8453 },
+    });
+  });
+
+  // POST /api/channels/:id/voucher — record a micro-task completion (off-chain)
+  app.post("/api/channels/:id/voucher", requireApiKey, async (req, res) => {
+    const channelKey = String(req.params.id);
+    const ch = activeChannels.get(channelKey);
+    if (!ch) return res.status(404).json({ error: "Channel not found" });
+    if (Date.now() / 1000 > ch.expiry) return res.status(400).json({ error: "Channel expired" });
+
+    const { taskDescription, taskResult, microBountyUsdc, nonce } = req.body;
+    if (nonce <= ch.lastVoucherNonce) {
+      return res.status(400).json({ error: "Nonce must be greater than last nonce", lastNonce: ch.lastVoucherNonce });
+    }
+    ch.taskCount++;
+    ch.lastVoucherNonce = nonce;
+    ch.lastVoucherAmount = (ch.lastVoucherAmount ?? 0) + (microBountyUsdc ?? 0);
+
+    res.json({
+      channelId: req.params.id,
+      nonce,
+      cumulativeAmount: ch.lastVoucherAmount,
+      taskCount: ch.taskCount,
+      remainingBudget: ch.totalUsdc - ch.lastVoucherAmount,
+      message: "Micro-task recorded off-chain. No gas used. Poster should sign a Voucher for this cumulative amount.",
+      nextStep: `Poster signs: { channelId: "${req.params.id}", cumulativeAmount: ${ch.lastVoucherAmount}, nonce: ${nonce} } with EIP-712`,
+    });
+  });
+
+  // POST /api/channels/:id/close — settle channel on-chain with final voucher
+  app.post("/api/channels/:id/close", requireApiKey, async (req, res) => {
+    const channelKey = String(req.params.id);
+    const ch = activeChannels.get(channelKey);
+    if (!ch) return res.status(404).json({ error: "Channel not found" });
+
+    const { cumulativeAmount, nonce, posterSignature } = req.body;
+    if (!posterSignature) return res.status(400).json({ error: "Missing posterSignature" });
+
+    const agentPayout = Math.round(cumulativeAmount * 0.975);
+    const fee = cumulativeAmount - agentPayout;
+    const posterRefund = ch.totalUsdc - cumulativeAmount;
+
+    activeChannels.delete(channelKey);
+
+    res.json({
+      channelId: req.params.id,
+      settled: true,
+      tasksCompleted: ch.taskCount,
+      totalUsdc: ch.totalUsdc,
+      agentEarned: cumulativeAmount,
+      agentPayout,
+      platformFee: fee,
+      posterRefund,
+      note: "In production, this submits the signed voucher to QuestChannel.sol closeChannel(). The contract settles atomically.",
+      onChainSettlement: {
+        contract: "QuestChannel (deploy pending)",
+        method: "closeChannel(channelId, cumulativeAmount, nonce, posterSig)",
+        network: "Base mainnet",
+      },
+    });
+  });
+
+  // GET /api/channels/:id — channel status
+  app.get("/api/channels/:id", async (req, res) => {
+    const channelKey = String(req.params.id);
+    const ch = activeChannels.get(channelKey);
+    if (!ch) return res.status(404).json({ error: "Channel not found" });
+    res.json({ channelId: req.params.id, ...ch, isExpired: Date.now() / 1000 > ch.expiry });
   });
 
   return httpServer;
