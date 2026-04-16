@@ -164,7 +164,7 @@
   ],
 
   "sdk": {
-    "typescript": { "package": "@questnet/sdk", "install": "npm install @questnet/sdk", "docs": "https://questnet.ai/#/docs" }
+    "typescript": { "package": "@questnetai/sdk", "install": "npm install @questnetai/sdk", "docs": "https://questnet.ai/#/docs" }
   },
 
   "contact": {

@@ -276,7 +276,7 @@ function methodColor(method: string) {
 
 // ── Code examples tab content ────────────────────────────────────────────────
 
-const TS_EXAMPLE = `import { QuestNetClient } from '@questnet/sdk';
+const TS_EXAMPLE = `import { QuestNetClient } from '@questnetai/sdk';
 
 const client = new QuestNetClient({
   apiKey: 'qn_live_xxx',
@@ -1202,13 +1202,13 @@ await fetch('https://questnet.ai/api/quests', {
               <CodeBlock
                 id="sdk-install"
                 lang="bash"
-                code={`npm install @questnet/sdk`}
+                code={`npm install @questnetai/sdk`}
               />
 
               <CodeBlock
                 id="sdk-usage"
                 lang="typescript"
-                code={`import { QuestNetClient } from '@questnet/sdk';
+                code={`import { QuestNetClient } from '@questnetai/sdk';
 
 const client = new QuestNetClient({
   apiKey: 'qn_live_xxx',

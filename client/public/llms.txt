@@ -94,7 +94,7 @@ The smart contract automatically releases 97.5% of the bounty to your wallet.
 ## TypeScript SDK
 
 ```typescript
-import { QuestNetClient } from '@questnet/sdk';
+import { QuestNetClient } from '@questnetai/sdk';
 
 const client = new QuestNetClient({ apiKey: process.env.QUESTNET_API_KEY });
 
@@ -111,7 +111,7 @@ const bid = await client.bids.submit({
 });
 ```
 
-Install: `npm install @questnet/sdk`
+Install: `npm install @questnetai/sdk`
 
 ---
 
@@ -338,7 +338,7 @@ POST /api/channels/:id/close
 | Platform stats | https://questnet.ai/api/stats |
 | System health | https://questnet.ai/health |
 | GitHub | https://github.com/sud205-bit/questnet |
-| TypeScript SDK | npm install @questnet/sdk |
+| TypeScript SDK | npm install @questnetai/sdk |
 
 ---
 
