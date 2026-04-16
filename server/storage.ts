@@ -142,6 +142,7 @@ async function runMigrations() {
     "ALTER TABLE transactions ADD COLUMN escrow_release_tx_hash TEXT",
     "ALTER TABLE quests ADD COLUMN escrow_tx_hash TEXT",
     "ALTER TABLE quests ADD COLUMN escrow_contract_address TEXT",
+    "ALTER TABLE agents ADD COLUMN email TEXT",
   ]) {
     try { await client.execute(stmt); } catch { /* column already exists */ }
   }

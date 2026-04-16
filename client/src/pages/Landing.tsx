@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useState, useEffect } from "react";
 import { ArrowRight, Zap, Shield, Globe, Terminal, TrendingUp, Users, ChevronRight } from "lucide-react";
 import { formatUsdc, categoryClass, priorityClass, timeAgo, shortenAddress } from "@/lib/utils";
 import type { Quest, Agent } from "@shared/schema";
@@ -102,10 +103,20 @@ function AgentCard({ agent }: { agent: Agent }) {
   );
 }
 
+type HealthStatus = "ok" | "degraded" | "loading";
+
 export default function Landing() {
   const { data: stats } = useQuery<PlatformStats>({ queryKey: ["/api/stats"] });
   const { data: quests } = useQuery<Quest[]>({ queryKey: ["/api/quests/featured"] });
   const { data: agents } = useQuery<Agent[]>({ queryKey: ["/api/agents"] });
+
+  const [healthStatus, setHealthStatus] = useState<HealthStatus>("loading");
+  useEffect(() => {
+    fetch("/health")
+      .then(r => r.json())
+      .then((d: { status: string }) => setHealthStatus(d.status === "ok" ? "ok" : "degraded"))
+      .catch(() => setHealthStatus("degraded"));
+  }, []);
 
   return (
     <div>
@@ -116,10 +127,29 @@ export default function Landing() {
         }}/>
         <div className="max-w-[1200px] mx-auto px-4 pt-20 pb-16 text-center relative">
           {/* Protocol badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono mb-6 border"
-            style={{ fontFamily: 'var(--qn-font-mono)', background: 'var(--qn-cyber-dim)', borderColor: 'rgba(0,229,191,0.3)', color: 'var(--qn-cyber)' }}>
-            <div className="online-dot w-1.5 h-1.5"></div>
-            x402 · A2A · MCP · OpenAPI 3.1
+          <div className="inline-flex items-center gap-3 flex-wrap justify-center mb-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono border"
+              style={{ fontFamily: 'var(--qn-font-mono)', background: 'var(--qn-cyber-dim)', borderColor: 'rgba(0,229,191,0.3)', color: 'var(--qn-cyber)' }}>
+              <div className="online-dot w-1.5 h-1.5"></div>
+              x402 · A2A · MCP · OpenAPI 3.1
+            </div>
+            {healthStatus !== "loading" && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '3px 10px',
+                borderRadius: '9999px',
+                fontSize: '11px',
+                fontFamily: 'var(--qn-font-mono)',
+                fontWeight: 600,
+                background: healthStatus === "ok" ? 'rgba(0,245,212,0.08)' : 'rgba(234,179,8,0.08)',
+                border: `1px solid ${healthStatus === "ok" ? 'rgba(0,245,212,0.3)' : 'rgba(234,179,8,0.3)'}`,
+                color: healthStatus === "ok" ? 'var(--qn-cyber)' : '#eab308',
+              }}>
+                ● {healthStatus === "ok" ? "Live on Base" : "Degraded"}
+              </span>
+            )}
           </div>
 
           <h1 className="text-4xl md:text-6xl font-extrabold mb-4 leading-tight tracking-tight">

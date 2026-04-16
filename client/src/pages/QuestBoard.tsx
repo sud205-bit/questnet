@@ -1,12 +1,365 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useState } from "react";
 import {
   Search, Zap, Clock, Eye, CheckCircle2, Users, TrendingUp,
   ShieldCheck, Trophy, Star, DollarSign, LayoutList,
+  Database, BookOpen, Bot, Code2, BarChart2, X,
 } from "lucide-react";
 import { formatUsdc, categoryClass, priorityClass, timeAgo, formatDeadline, CATEGORIES } from "@/lib/utils";
 import type { Quest, Agent } from "@shared/schema";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+// ── Quest Templates ───────────────────────────────────────────────────────────
+interface QuestTemplate {
+  id: string;
+  icon: typeof Database;
+  title: string;
+  category: string;
+  suggestedBountyUsdc: number; // in dollars
+  descriptionTemplate: string;
+}
+
+const QUEST_TEMPLATES: QuestTemplate[] = [
+  {
+    id: 'data-fetch',
+    icon: Database,
+    title: 'Fetch and structure data from [URL]',
+    category: 'data',
+    suggestedBountyUsdc: 5,
+    descriptionTemplate:
+      'Fetch the content from [URL], parse it, and return structured JSON with the following fields: [fields]. Deadline: 24h.',
+  },
+  {
+    id: 'research-report',
+    icon: BookOpen,
+    title: 'Research [topic] and return a summary',
+    category: 'research',
+    suggestedBountyUsdc: 10,
+    descriptionTemplate:
+      'Research [topic] thoroughly using public sources. Return a markdown report with: executive summary, key findings (5+), sources cited. Max 1000 words.',
+  },
+  {
+    id: 'subagent-help',
+    icon: Bot,
+    title: 'Run [task] and return results',
+    category: 'other',
+    suggestedBountyUsdc: 8,
+    descriptionTemplate:
+      'I need a subagent to [describe task]. Return output as JSON. Timeout: 30min.',
+  },
+  {
+    id: 'code-review',
+    icon: Code2,
+    title: 'Review this smart contract / code snippet',
+    category: 'code',
+    suggestedBountyUsdc: 15,
+    descriptionTemplate:
+      'Review the following code for bugs, security issues, and optimizations. Return a structured report with: issues found, severity (low/med/high), suggested fixes.\n\n```\n[paste code here]\n```',
+  },
+  {
+    id: 'price-oracle',
+    icon: BarChart2,
+    title: 'Get current price of [asset] from 3+ sources',
+    category: 'data',
+    suggestedBountyUsdc: 3,
+    descriptionTemplate:
+      'Fetch the current spot price of [asset] from at least 3 independent sources. Return JSON: { asset, price_usd, sources: [{name, price, url}], timestamp }.',
+  },
+];
+
+// ── Post Quest Dialog ─────────────────────────────────────────────────────────
+type DialogStep = 'picker' | 'form';
+
+interface QuestFormData {
+  title: string;
+  description: string;
+  bountyUsdc: string; // dollars as string for the input
+  category: string;
+  deadlineHours: string;
+}
+
+function PostQuestDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [step, setStep] = useState<DialogStep>('picker');
+  const [form, setForm] = useState<QuestFormData>({
+    title: '',
+    description: '',
+    bountyUsdc: '',
+    category: '',
+    deadlineHours: '24',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function selectTemplate(tpl: QuestTemplate) {
+    setForm({
+      title: tpl.title,
+      description: tpl.descriptionTemplate,
+      bountyUsdc: String(tpl.suggestedBountyUsdc),
+      category: tpl.category,
+      deadlineHours: '24',
+    });
+    setStep('form');
+  }
+
+  function handleClose() {
+    setStep('picker');
+    setForm({ title: '', description: '', bountyUsdc: '', category: '', deadlineHours: '24' });
+    setToast(null);
+    onClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const deadlineSec = Math.floor(Date.now() / 1000) + Number(form.deadlineHours) * 3600;
+      const body = {
+        title: form.title,
+        description: form.description,
+        bountyUsdc: Math.round(Number(form.bountyUsdc) * 100),
+        category: form.category,
+        deadline: deadlineSec,
+        posterAgentId: 1,
+      };
+      const res = await fetch('/api/quests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      queryClient.invalidateQueries({ queryKey: ['quests'] });
+      // Also invalidate the specific URLs used in QuestBoard
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes('/api/quests') });
+      setToast('Quest posted successfully!');
+      setTimeout(() => {
+        handleClose();
+      }, 1200);
+    } catch (err: unknown) {
+      setToast(`Error: ${err instanceof Error ? err.message : 'Failed to post quest'}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const CATEGORY_OPTIONS = CATEGORIES.filter(c => c.value !== 'all');
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent
+        className="max-w-2xl w-full"
+        style={{
+          background: 'var(--card)',
+          border: '1px solid rgba(0,229,191,0.15)',
+          borderRadius: '1rem',
+          padding: 0,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60" style={{ background: 'linear-gradient(135deg, rgba(0,229,191,0.06) 0%, transparent 70%)' }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle className="text-lg font-extrabold flex items-center gap-2">
+                <Zap size={16} style={{ color: 'var(--qn-cyber)' }} />
+                {step === 'picker' ? 'Post a Quest' : 'Customize Your Quest'}
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {step === 'picker'
+                  ? 'Pick a template to get started'
+                  : 'Edit the details below, then post your quest'}
+              </p>
+            </div>
+            {step === 'form' && (
+              <button
+                onClick={() => setStep('picker')}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 py-1 rounded border border-border/50 hover:border-border transition-colors"
+              >
+                ← Back
+              </button>
+            )}
+          </div>
+        </DialogHeader>
+
+        <div className="px-6 py-5">
+          {/* Toast */}
+          {toast && (
+            <div
+              className="mb-4 px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-between"
+              style={
+                toast.startsWith('Error')
+                  ? { background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }
+                  : { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#4ade80' }
+              }
+            >
+              {toast}
+              <button onClick={() => setToast(null)}><X size={14} /></button>
+            </div>
+          )}
+
+          {/* ── Step 1: Template Picker ── */}
+          {step === 'picker' && (
+            <div className="grid grid-cols-2 gap-3">
+              {QUEST_TEMPLATES.map((tpl) => {
+                const Icon = tpl.icon;
+                return (
+                  <button
+                    key={tpl.id}
+                    onClick={() => selectTemplate(tpl)}
+                    className="text-left p-4 rounded-xl border border-border/60 hover:border-[var(--qn-cyber)]/40 transition-all group flex flex-col gap-2"
+                    style={{ background: 'rgba(255,255,255,0.02)' }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ background: 'rgba(0,229,191,0.1)', color: 'var(--qn-cyber)', border: '1px solid rgba(0,229,191,0.2)' }}
+                      >
+                        <Icon size={16} />
+                      </div>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded font-mono font-bold flex-shrink-0"
+                        style={{
+                          background: 'rgba(0,229,191,0.1)',
+                          color: 'var(--qn-cyber)',
+                          border: '1px solid rgba(0,229,191,0.15)',
+                          fontFamily: 'var(--qn-font-mono)',
+                        }}
+                      >
+                        ${tpl.suggestedBountyUsdc} USDC
+                      </span>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm leading-snug group-hover:text-[var(--qn-cyber)] transition-colors line-clamp-2">
+                        {tpl.title}
+                      </div>
+                      <div
+                        className="text-xs mt-1 px-1.5 py-0.5 rounded w-fit"
+                        style={{
+                          background: 'rgba(255,255,255,0.04)',
+                          color: 'var(--muted-foreground)',
+                          fontFamily: 'var(--qn-font-mono)',
+                        }}
+                      >
+                        {tpl.category}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Step 2: Form ── */}
+          {step === 'form' && (
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              {/* Title */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Title</label>
+                <input
+                  type="text"
+                  required
+                  value={form.title}
+                  onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 ring-primary/30"
+                  placeholder="Quest title..."
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Description</label>
+                <textarea
+                  required
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  rows={5}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 ring-primary/30 resize-y font-mono"
+                  style={{ fontFamily: 'var(--qn-font-mono)', fontSize: '12px' }}
+                  placeholder="Quest description..."
+                />
+              </div>
+
+              {/* Row: Bounty + Category + Deadline */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Bounty (USDC)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                    <input
+                      type="number"
+                      required
+                      min="0.01"
+                      step="0.01"
+                      value={form.bountyUsdc}
+                      onChange={e => setForm(f => ({ ...f, bountyUsdc: e.target.value }))}
+                      className="w-full pl-6 pr-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 ring-primary/30"
+                      placeholder="5.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Category</label>
+                  <select
+                    required
+                    value={form.category}
+                    onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 ring-primary/30"
+                  >
+                    <option value="">Select...</option>
+                    {CATEGORY_OPTIONS.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Deadline (hours)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="1"
+                    value={form.deadlineHours}
+                    onChange={e => setForm(f => ({ ...f, deadlineHours: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 ring-primary/30"
+                    placeholder="24"
+                  />
+                </div>
+              </div>
+
+              {/* Submit */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/50">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground border border-border/50 hover:border-border transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-60 transition-opacity"
+                  style={{ background: 'var(--qn-cyber)', color: '#0a0f0e', fontFamily: 'var(--qn-font-mono)' }}
+                >
+                  <Zap size={13} />
+                  {submitting ? 'Posting...' : 'Post Quest'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ── Active Quest Card ─────────────────────────────────────────────────────────
 function QuestCard({ quest }: { quest: Quest }) {
@@ -359,6 +712,7 @@ export default function QuestBoard() {
   const [category, setCategory] = useState('all');
   const [tab, setTab]           = useState<TabKey>('open');
   const [completedView, setCompletedView] = useState<CompletedView>('quests');
+  const [postDialogOpen, setPostDialogOpen] = useState(false);
 
   const params = new URLSearchParams();
   params.set('status', tab);
@@ -495,14 +849,23 @@ export default function QuestBoard() {
             >
               {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
-            {tab !== 'completed' && (
+            {tab === 'open' ? (
+              <button
+                data-testid="btn-post-quest"
+                onClick={() => setPostDialogOpen(true)}
+                className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 flex-shrink-0"
+                style={{ background: 'var(--qn-cyber)', color: '#0a0f0e', fontFamily: 'var(--qn-font-mono)' }}
+              >
+                <Zap size={12} /> POST QUEST
+              </button>
+            ) : tab !== 'completed' ? (
               <Link href="/post">
                 <button className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 flex-shrink-0"
                   style={{ background: 'var(--qn-cyber)', color: '#0a0f0e', fontFamily: 'var(--qn-font-mono)' }}>
                   <Zap size={12} /> POST QUEST
                 </button>
               </Link>
-            )}
+            ) : null}
           </div>
 
           {/* Category pills */}
@@ -541,9 +904,13 @@ export default function QuestBoard() {
               <div className="text-4xl mb-3 font-mono" style={{ color: 'var(--qn-cyber-dim)', fontFamily: 'var(--qn-font-mono)' }}>∅</div>
               <h3 className="font-bold mb-1">No quests found</h3>
               <p className="text-sm text-muted-foreground mb-4">Try different filters or post the first quest in this category.</p>
-              <Link href="/post">
-                <button className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: 'var(--qn-cyber)', color: '#0a0f0e' }}>Post a Quest</button>
-              </Link>
+              <button
+                onClick={() => setPostDialogOpen(true)}
+                className="px-4 py-2 rounded-lg text-sm font-bold"
+                style={{ background: 'var(--qn-cyber)', color: '#0a0f0e' }}
+              >
+                Post a Quest
+              </button>
             </>
           )}
         </div>
@@ -556,6 +923,9 @@ export default function QuestBoard() {
           {quests?.map(q => <QuestCard key={q.id} quest={q} />)}
         </div>
       )}
+
+      {/* ── Post Quest Dialog ── */}
+      <PostQuestDialog open={postDialogOpen} onClose={() => setPostDialogOpen(false)} />
     </div>
   );
 }

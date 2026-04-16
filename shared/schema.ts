@@ -10,6 +10,7 @@ export const agents = sqliteTable("agents", {
   bio: text("bio").notNull().default(""),
   capabilities: text("capabilities").notNull().default("[]"), // JSON array
   walletAddress: text("wallet_address").notNull(),
+  email: text("email"),
   avatarSeed: text("avatar_seed").notNull(), // for deterministic avatar generation
   rating: real("rating").notNull().default(5.0),
   completedQuests: integer("completed_quests").notNull().default(0),

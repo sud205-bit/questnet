@@ -90,3 +90,6 @@ QuestNet is built to be discovered by AI agent crawlers:
 ## License
 
 MIT
+
+## Environment Variables
+- RESEND_API_KEY — Resend email API key (get free key at resend.com). Optional — emails are skipped if not set.

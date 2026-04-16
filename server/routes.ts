@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
+import { sendBidReceivedEmail, sendBidAcceptedEmail, sendQuestCompletedEmail, sendEscrowReleasedEmail } from "./email";
 import { parsePaymentHeader, verifyX402Payment } from "./x402";
 import { insertQuestSchema, insertBidSchema, insertAgentSchema, insertReviewSchema } from "@shared/schema";
 import { TREASURY, calculateFeeSplit } from "@shared/treasury";
@@ -29,8 +30,25 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction) {
 
 export function registerRoutes(httpServer: Server, app: Express) {
   // ── Healthcheck ────────────────────────────────────────────────────────────
-  app.get("/health", (_req, res) => {
-    res.json({ status: "ok", ts: Date.now() });
+  // GET /health — uptime check
+  app.get("/health", async (_req, res) => {
+    const start = Date.now();
+    let dbOk = false;
+    try {
+      await storage.getAgents(); // lightweight DB ping
+      dbOk = true;
+    } catch {}
+    res.json({
+      status: dbOk ? "ok" : "degraded",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+      version: "1.0.0",
+      services: {
+        database: dbOk ? "ok" : "error",
+        escrow: process.env.ESCROW_CONTRACT_ADDRESS ? "configured" : "disabled",
+      },
+      latencyMs: Date.now() - start,
+    });
   });
 
   // ── Platform Stats (public) ────────────────────────────────────────────────
@@ -278,7 +296,13 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (quest.status !== "open") return res.status(400).json({ error: "Quest is not open for bids" });
     const result = insertBidSchema.safeParse({ ...req.body, questId });
     if (!result.success) return res.status(400).json({ error: result.error.flatten() });
-    res.status(201).json(await storage.createBid(result.data));
+    const newBid = await storage.createBid(result.data);
+    // Fire-and-forget email to quest poster
+    const poster = quest.posterAgentId ? await storage.getAgent(quest.posterAgentId) : null;
+    if (poster?.email) {
+      sendBidReceivedEmail(poster.email, quest.title, quest.id, result.data.agentHandle || 'unknown', result.data.proposedBountyUsdc || quest.bountyUsdc).catch(() => {});
+    }
+    res.status(201).json(newBid);
   });
 
   app.patch("/api/bids/:id", async (req, res) => {
@@ -290,7 +314,16 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (result.data.status === "accepted") {
       await storage.updateQuest(bid.questId, { status: "in_progress", assignedAgentId: bid.agentId });
     }
-    res.json(await storage.updateBid(bid.id, result.data));
+    const updatedBid = await storage.updateBid(bid.id, result.data);
+    // Email the bidding agent on acceptance
+    if (result.data.status === "accepted") {
+      const bidAgent = await storage.getAgent(bid.agentId);
+      const questForBid = await storage.getQuest(bid.questId);
+      if (bidAgent?.email && questForBid) {
+        sendBidAcceptedEmail(bidAgent.email, questForBid.title, questForBid.id, questForBid.bountyUsdc).catch(() => {});
+      }
+    }
+    res.json(updatedBid);
   });
 
   // ── Reviews ────────────────────────────────────────────────────────────────
@@ -432,6 +465,15 @@ export function registerRoutes(httpServer: Server, app: Express) {
       await storage.updateQuest(quest.id, { status: "completed" });
       // Track volume against the API key
       await storage.trackApiKeyVolume(apiKey.key, quest.bountyUsdc);
+      // Email both parties
+      const completedAgent = assignedAgent;
+      const questPoster = quest.posterAgentId ? await storage.getAgent(quest.posterAgentId) : null;
+      if (questPoster?.email) {
+        sendQuestCompletedEmail(questPoster.email, quest.title, quest.id, agentWallet, verification.agentPayout, escrowReleaseTxHash).catch(() => {});
+      }
+      if (completedAgent?.email && escrowReleaseTxHash) {
+        sendEscrowReleasedEmail(completedAgent.email, quest.title, quest.id, verification.agentPayout, escrowReleaseTxHash).catch(() => {});
+      }
     }
 
     return res.json({
