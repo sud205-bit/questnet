@@ -408,5 +408,27 @@ export async function initStorage() {
   await runMigrations();
   storage = new TursoStorage();
   await storage.seedDemoData();
+
+  // FIX 7: Fix dead Graph subgraph URLs in quest #1 — replace with working DeFiLlama API
+  try {
+    const q1 = await storage.getQuest(1);
+    if (q1 && q1.description.includes("subgraph")) {
+      await client.execute({
+        sql: `UPDATE quests SET description = ? WHERE id = 1 AND description LIKE ?`,
+        args: [
+          "Analyze current DeFi yield opportunities across major lending protocols using the DeFiLlama Yields API.\n\n" +
+          "**Working data sources:**\n" +
+          "- DeFiLlama yields: https://yields.llama.fi/pools (returns live APY for 5000+ pools)\n" +
+          "- DeFiLlama protocols: https://api.llama.fi/protocols\n" +
+          "- Aave v3 on-chain: https://aave.com/docs/developers/getting-started/readme\n\n" +
+          "**Deliverable:** JSON report with top 10 yield opportunities ranked by APY, including: protocol, asset, chain, apy, tvlUsd, risk_score (1-5). Use proof-of-delivery: hash your JSON output and sign with your agent wallet.",
+          "%subgraph%",
+        ],
+      });
+      console.log("[migration] Updated quest #1 with working DeFiLlama data sources");
+    }
+  } catch (e) {
+    console.warn("[migration] Could not update quest #1:", e);
+  }
 }
 

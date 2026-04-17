@@ -11,6 +11,49 @@ import { ESCROW_ENABLED, ESCROW_ADDRESS, verifyEscrowDeposit, releaseEscrow, ref
 import { verifyDeliveryProof, hashDeliverable, type DeliveryProof } from "./proof";
 import { z } from "zod";
 
+
+// ── JSON normalization helpers ─────────────────────────────────────────────────
+
+// Parse a JSON-encoded string field to an array, handling double-encoding
+function parseJsonArray(val: unknown): string[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+      // double-encoded: e.g. "[\"yield\",\"Aave\"]" stored as string
+      if (typeof parsed === "string") return JSON.parse(parsed);
+    } catch {}
+  }
+  return [];
+}
+
+// Platform quest: posterAgentId is one of the known seed agents (ids 1-6)
+// Community quest: posted by a real external agent (id > 6)
+const PLATFORM_AGENT_IDS = new Set([1, 2, 3, 4, 5, 6]);
+
+// Normalize quest fields so clients never double-parse
+function normalizeQuest(q: any) {
+  return {
+    ...q,
+    tags: parseJsonArray(q.tags),
+    requiredCapabilities: parseJsonArray(q.requiredCapabilities),
+    capabilities: parseJsonArray(q.requiredCapabilities), // alias — populate from requiredCapabilities
+    attachments: parseJsonArray(q.attachments),
+    isPlatformQuest: PLATFORM_AGENT_IDS.has(q.posterAgentId),
+    questSource: PLATFORM_AGENT_IDS.has(q.posterAgentId) ? "platform" : "community",
+    escrowFunded: !!q.escrowTxHash,
+  };
+}
+
+// Normalize agent capabilities
+function normalizeAgent(a: any) {
+  return {
+    ...a,
+    capabilities: parseJsonArray(a.capabilities),
+  };
+}
+
 // ── API Key middleware ─────────────────────────────────────────────────────────
 // Reads key from Authorization: Bearer qn_live_xxx  OR  X-Api-Key: qn_live_xxx
 async function requireApiKey(req: Request, res: Response, next: NextFunction) {
@@ -106,8 +149,8 @@ export function registerRoutes(httpServer: Server, app: Express) {
   // ── Agents (public read, key-protected write) ──────────────────────────────
   app.get("/api/agents", async (req, res) => {
     const { search, limit, offset } = req.query;
-    if (search) return res.json(await storage.searchAgents(String(search)));
-    res.json(await storage.getAgents(Number(limit) || 50, Number(offset) || 0));
+    if (search) return res.json((await storage.searchAgents(String(search))).map(normalizeAgent));
+    res.json((await storage.getAgents(Number(limit) || 50, Number(offset) || 0)).map(normalizeAgent));
   });
 
   // GET /api/leaderboard — agents ranked by quests completed, USDC earned, rating
@@ -131,20 +174,37 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     const reviews = await storage.getReviewsForAgent(agent.id);
     const bids    = await storage.getBidsForAgent(agent.id);
-    res.json({ ...agent, reviews, bids });
+    res.json({ ...normalizeAgent(agent), reviews, bids });
   });
 
   // Register agent → auto-generates an API key
   app.post("/api/agents", async (req, res) => {
+    // FIX 8: Normalize incoming capabilities — accept both comma-separated and JSON array
+    if (req.body.capabilities && typeof req.body.capabilities === "string") {
+      const cap = req.body.capabilities.trim();
+      if (!cap.startsWith("[")) {
+        // Comma-separated → JSON array
+        req.body.capabilities = JSON.stringify(cap.split(",").map((s: string) => s.trim()).filter(Boolean));
+      }
+    }
     const result = insertAgentSchema.safeParse(req.body);
-    if (!result.success) return res.status(400).json({ error: result.error.flatten() });
+    if (!result.success) return res.status(400).json({
+      error: "Validation failed",
+      details: result.error.issues,
+      fieldHints: {
+        capabilities: "JSON array string OR comma-separated string. Examples: \'[\"data-fetch\",\"research\"]\' or \'data-fetch,research\'",
+        avatarSeed: "Any string used to generate a deterministic avatar. Use your handle or a UUID. Example: \'my-agent-v1\'",
+        walletAddress: "Your Base/EVM wallet address starting with 0x",
+        agentType: "One of: general | data | code | research | trade | communication | compute",
+      },
+    });
     const existing = await storage.getAgentByHandle(result.data.handle);
     if (existing) return res.status(409).json({ error: "Handle already taken" });
     const agent = await storage.createAgent(result.data);
     // Auto-create first API key on registration
     const apiKey = await storage.createApiKey(agent.id, "default");
     res.status(201).json({
-      agent,
+      agent: normalizeAgent(agent),
       apiKey: {
         key: apiKey.key,    // shown once
         message: "Save this API key — it will not be shown again. Use it in Authorization: Bearer <key> or X-Api-Key headers.",
@@ -159,11 +219,11 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (category) filters.category = String(category);
     if (status)   filters.status   = String(status);
     if (search)   filters.search   = String(search);
-    res.json(await storage.getQuests(filters, Number(limit) || 50, Number(offset) || 0));
+    res.json((await storage.getQuests(filters, Number(limit) || 50, Number(offset) || 0)).map(normalizeQuest));
   });
 
   app.get("/api/quests/featured", async (_req, res) => {
-    res.json(await storage.getFeaturedQuests(6));
+    res.json((await storage.getFeaturedQuests(6)).map(normalizeQuest));
   });
 
   app.get("/api/quests/:id", async (req, res) => {
@@ -173,7 +233,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
     const poster = await storage.getAgent(quest.posterAgentId);
     const bids   = await storage.getBidsForQuest(quest.id);
     const bidsWithAgents = await Promise.all(bids.map(async b => ({ ...b, agent: await storage.getAgent(b.agentId) })));
-    res.json({ ...quest, poster, bids: bidsWithAgents });
+    res.json({ ...normalizeQuest(quest), poster: poster ? normalizeAgent(poster) : null, bids: bidsWithAgents });
   });
 
   // POST quest — requires API key
@@ -193,20 +253,20 @@ export function registerRoutes(httpServer: Server, app: Express) {
           escrowTxHash: depositTxHash,
           escrowContractAddress: ESCROW_ADDRESS,
         });
-        return res.status(201).json({
+        return res.status(201).json(normalizeQuest({
           ...quest,
           escrowTxHash: depositTxHash,
           escrowContractAddress: ESCROW_ADDRESS,
           escrowVerified: true,
-        });
+        }));
       } else {
         // Deposit verification failed — still create the quest but flag it
         console.warn(`[escrow] Deposit verify failed for quest ${quest.id}:`, verification.error);
-        return res.status(201).json({
+        return res.status(201).json(normalizeQuest({
           ...quest,
           escrowVerified: false,
           escrowWarning: verification.error,
-        });
+        }));
       }
     }
 
@@ -224,14 +284,14 @@ export function registerRoutes(httpServer: Server, app: Express) {
       },
     } : {};
 
-    res.status(201).json({ ...quest, ...escrowInfo });
+    res.status(201).json(normalizeQuest({ ...quest, ...escrowInfo }));
   });
 
   app.patch("/api/quests/:id", async (req, res) => {
     const quest = await storage.getQuest(Number(req.params.id));
     if (!quest) return res.status(404).json({ error: "Quest not found" });
     const updated = await storage.updateQuest(quest.id, req.body);
-    res.json(updated);
+    res.json(updated ? normalizeQuest(updated) : updated);
   });
 
   // POST /api/quests/:id/cancel — cancel quest and refund escrow bounty to poster
@@ -299,13 +359,33 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (quest.status !== "open") return res.status(400).json({ error: "Quest is not open for bids" });
     const result = insertBidSchema.safeParse({ ...req.body, questId });
     if (!result.success) return res.status(400).json({ error: result.error.flatten() });
+
+    // FIX 3: Check for duplicate bid
+    const existingBids = await storage.getBidsForQuest(quest.id);
+    const duplicateBid = existingBids.find(b => b.agentId === result.data.agentId && b.status === "pending");
+    if (duplicateBid) {
+      return res.status(409).json({
+        error: "Duplicate bid — you already have a pending bid on this quest",
+        existingBidId: duplicateBid.id,
+        existingBid: duplicateBid,
+        hint: "PATCH /api/bids/:id to update your existing bid, or wait for the poster to respond.",
+      });
+    }
+
     const newBid = await storage.createBid(result.data);
     // Fire-and-forget email to quest poster
     const poster = quest.posterAgentId ? await storage.getAgent(quest.posterAgentId) : null;
     if (poster?.email) {
       sendBidReceivedEmail(poster.email, quest.title, quest.id, result.data.agentHandle || 'unknown', result.data.proposedBountyUsdc || quest.bountyUsdc).catch(() => {});
     }
-    res.status(201).json(newBid);
+    return res.status(201).json({
+      ...newBid,
+      _clarification: {
+        proposedBountyUsdc: "Your proposed amount is used by the poster for bid selection only. It does not affect your actual payout.",
+        actualPayout: `If selected, you receive ${Math.round(quest.bountyUsdc * 0.975)} USDC (97.5% of locked bounty: ${quest.bountyUsdc} USDC). Platform fee: ${Math.round(quest.bountyUsdc * 0.025)} USDC (2.5%).`,
+        escrowFunded: !!quest.escrowTxHash,
+      },
+    });
   });
 
   app.patch("/api/bids/:id", async (req, res) => {
@@ -400,6 +480,33 @@ export function registerRoutes(httpServer: Server, app: Express) {
       protocol: "x402-v2",
       quest: { id: quest.id, title: quest.title, bountyUsdc: quest.bountyUsdc },
       feeSplit: { totalBounty: quest.bountyUsdc, platformFee, agentPayout, platformFeePercent: TREASURY.FEE_PERCENT_DISPLAY },
+      signatureFormat: {
+        header: "Payment-Signature",
+        format: "x402 <base64-encoded-json>",
+        fields: {
+          protocol: "x402-v2",
+          from: "0xYOUR_AGENT_WALLET",
+          to: "0xTREASURY_WALLET (provided in payTo above)",
+          amount: "BOUNTY_IN_USDC_CENTS (e.g. 500 for $5.00)",
+          questId: "QUEST_ID (integer)",
+          nonce: "RANDOM_UUID or timestamp string",
+          timestamp: "unix timestamp in seconds",
+        },
+        example: (() => {
+          const examplePayload = {
+            protocol: "x402-v2",
+            from: "0xYourAgentWallet",
+            to: TREASURY.WALLETS.base,
+            amount: quest.bountyUsdc,
+            questId: quest.id,
+            nonce: "550e8400-e29b-41d4-a716-446655440000",
+            timestamp: Math.floor(Date.now() / 1000),
+          };
+          return `x402 ${Buffer.from(JSON.stringify(examplePayload)).toString("base64")}`;
+        })(),
+        note: "Base64-encode the JSON payload and prefix with \'x402 \'. The signature does not require cryptographic signing for v2 — the on-chain escrow contract handles trustless verification.",
+      },
+      proposedBountySemantics: "proposedBountyUsdc in bids is for poster selection only — it does not affect payout. Payout is always: bountyUsdc * 0.975 (97.5% of locked escrow). Set it to match the quest bounty to signal you accept the full amount.",
     });
   });
 
@@ -463,6 +570,11 @@ export function registerRoutes(httpServer: Server, app: Express) {
       escrowReleaseTxHash: escrowReleaseTxHash,
     });
 
+    // FIX 5: Transition — update assignedAgentId immediately so agent can track their submission
+    await storage.updateQuest(quest.id, {
+      assignedAgentId: (await storage.getAgentByWallet(sig.from))?.id ?? quest.assignedAgentId,
+    });
+
     // Mark quest completed if payment is confirmed (escrow or on-chain)
     if (txStatus === "confirmed") {
       await storage.updateQuest(quest.id, { status: "completed" });
@@ -499,6 +611,26 @@ export function registerRoutes(httpServer: Server, app: Express) {
         status: txStatus === "confirmed" ? "completed" : quest.status,
       },
       ...(verification.error ? { warning: verification.error } : {}),
+    });
+  });
+
+  // ── Quest Status Polling ──────────────────────────────────────────────────────
+  // GET /api/quests/:id/status — lightweight status check for polling agents
+  app.get("/api/quests/:id/status", async (req, res) => {
+    const quest = await storage.getQuest(Number(req.params.id));
+    if (!quest) return res.status(404).json({ error: "Quest not found" });
+    res.json({
+      questId: quest.id,
+      status: quest.status,
+      assignedAgentId: quest.assignedAgentId,
+      escrowTxHash: quest.escrowTxHash,
+      poll: "Call this endpoint every 30s to track quest status transitions: open → in_progress → completed | cancelled",
+      statusMeaning: {
+        open: "Quest is accepting bids",
+        in_progress: "A bid was accepted, assigned agent is working",
+        completed: "Work accepted, escrow released to agent",
+        cancelled: "Quest cancelled, bounty refunded to poster",
+      },
     });
   });
 
@@ -938,7 +1070,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
     // Hydrate with full quest data
     const questMap = new Map(allQuests.map(q => [q.id, q]));
-    const results = ranked.map(r => ({
+    const results = ranked.map(r => normalizeQuest({
       ...questMap.get(r.id),
       _match: {
         score: r.score,
@@ -1000,12 +1132,12 @@ export function registerRoutes(httpServer: Server, app: Express) {
     const agentMap = new Map(allAgents.map(a => [a.id, a]));
     const results = ranked.map(r => {
       const a = agentMap.get(r.id)!;
-      return {
+      return normalizeAgent({
         id: a.id,
         handle: a.handle,
         displayName: a.displayName,
         bio: a.bio,
-        capabilities: JSON.parse(a.capabilities || "[]"),
+        capabilities: a.capabilities,
         rating: a.rating,
         completedQuests: a.completedQuests,
         agentType: a.agentType,
@@ -1016,7 +1148,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
           performanceScore: r.performanceScore,
           reasons: r.reasons,
         },
-      };
+      });
     });
 
     res.json({
