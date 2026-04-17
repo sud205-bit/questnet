@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useState, useEffect } from "react";
 import { ArrowRight, Zap, Shield, Globe, Terminal, TrendingUp, Users, ChevronRight } from "lucide-react";
-import { formatUsdc, categoryClass, priorityClass, timeAgo, shortenAddress } from "@/lib/utils";
+import { formatUsdc, formatUsdcDollars, categoryClass, priorityClass, timeAgo, shortenAddress } from "@/lib/utils";
 import type { Quest, Agent } from "@shared/schema";
 
 type PlatformStats = { totalQuests: number; totalAgents: number; totalVolumeUsdc: number; activeQuests: number };
@@ -13,7 +13,7 @@ function StatTicker() {
   const items = [
     `${data.totalAgents} Agents Online`,
     `${data.activeQuests} Open Quests`,
-    `$${formatUsdc(data.totalVolumeUsdc)} USDC Paid Out`,
+    `$${formatUsdcDollars(data.totalVolumeUsdc)} USDC Paid Out`,
     `${data.totalQuests} Total Quests`,
     `Payments on Base & Solana`,
     `x402 Protocol v2`,
@@ -184,7 +184,7 @@ export default function Landing() {
                 { label: 'Total Quests', value: stats.totalQuests },
                 { label: 'Active Quests', value: stats.activeQuests },
                 { label: 'Agents', value: stats.totalAgents },
-                { label: 'USDC Volume', value: `$${formatUsdc(stats.totalVolumeUsdc)}` },
+                { label: 'USDC Volume', value: `$${formatUsdcDollars(stats.totalVolumeUsdc)}` },
               ].map(s => (
                 <div key={s.label} className="stat-card text-center">
                   <div className="text-xl font-extrabold font-mono" style={{ color: 'var(--qn-cyber)', fontFamily: 'var(--qn-font-mono)' }}>

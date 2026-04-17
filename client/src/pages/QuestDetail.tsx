@@ -1,8 +1,8 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Zap, Clock, Eye, Users, Copy, Check, ExternalLink, Terminal, ShieldCheck, ShieldAlert, Loader2, Lock } from "lucide-react";
-import { formatUsdc, categoryClass, priorityClass, timeAgo, formatDeadline, shortenAddress } from "@/lib/utils";
+import { ArrowLeft, Zap, Clock, Eye, Users, Copy, Check, ExternalLink, Terminal, ShieldCheck, ShieldAlert, Loader2, Lock, Sparkles, Star } from "lucide-react";
+import { formatUsdc, categoryClass, priorityClass, timeAgo, formatDeadline, shortenAddress, seedColor, agentInitials } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Quest, Agent, Bid } from "@shared/schema";
@@ -27,6 +27,144 @@ interface EscrowResponse {
 const ESCROW_CONTRACT = "0x832d0b91d7d4acc77ea729aec8c7deb3a8cdef29";
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const BASESCAN_BASE = "https://basescan.org";
+
+// ── Matching types ───────────────────────────────────────────────────────────────
+interface RecommendedAgent extends Agent {
+  matchScore: number;
+  matchReasons: string[];
+}
+
+// ── Agent Match Card ───────────────────────────────────────────────────────────
+function AgentMatchCard({ agent, questId }: { agent: RecommendedAgent; questId: number }) {
+  const caps: string[] = (() => { try { return JSON.parse(agent.capabilities ?? '[]'); } catch { return []; } })();
+  const avatarColor = seedColor(agent.handle);
+  const initials = agentInitials(agent.handle);
+  const score = Math.max(0, Math.min(100, agent.matchScore));
+  const reasonsText = (agent.matchReasons ?? []).slice(0, 2).join(' · ');
+
+  return (
+    <div
+      className="rounded-xl p-4 flex flex-col gap-3 min-w-0"
+      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}
+      data-testid={`suggested-agent-${agent.id}`}
+    >
+      {/* Avatar + name row */}
+      <div className="flex items-center gap-2.5">
+        <Link href={`/agents/${agent.id}`}>
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center font-mono font-bold text-sm flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ background: `${avatarColor}22`, color: avatarColor, border: `1px solid ${avatarColor}44`, fontFamily: 'var(--qn-font-mono)' }}
+          >
+            {initials}
+          </div>
+        </Link>
+        <div className="flex-1 min-w-0">
+          <Link href={`/agents/${agent.id}`}>
+            <div className="font-semibold text-sm truncate hover:text-primary transition-colors cursor-pointer">{agent.displayName}</div>
+          </Link>
+          <div className="text-xs text-muted-foreground font-mono truncate" style={{ fontFamily: 'var(--qn-font-mono)' }}>@{agent.handle}</div>
+        </div>
+        <span className="text-xs px-1.5 py-0.5 rounded font-mono flex-shrink-0"
+          style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--muted-foreground)', fontFamily: 'var(--qn-font-mono)', fontSize: '10px' }}>
+          {agent.agentType}
+        </span>
+      </div>
+
+      {/* Capabilities */}
+      {caps.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {caps.slice(0, 3).map(c => (
+            <span key={c} className="text-xs px-1.5 py-0.5 rounded"
+              style={{ background: 'var(--qn-cyber-dim)', color: 'var(--qn-cyber)', border: '1px solid rgba(0,229,191,0.15)', fontFamily: 'var(--qn-font-mono)', fontSize: '10px' }}>
+              {c}
+            </span>
+          ))}
+          {caps.length > 3 && <span className="text-xs text-muted-foreground">+{caps.length - 3}</span>}
+        </div>
+      )}
+
+      {/* Match score bar */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">Match</span>
+          <span className="font-mono font-semibold" style={{ color: '#00f5d4', fontFamily: 'var(--qn-font-mono)' }}>{score}%</span>
+        </div>
+        <div className="h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
+          <div className="h-1 rounded-full transition-all" style={{ width: `${score}%`, background: '#00f5d4' }} />
+        </div>
+        {reasonsText && (
+          <p className="text-xs text-muted-foreground/60" style={{ fontFamily: 'var(--qn-font-mono)', fontSize: '10px' }}>{reasonsText}</p>
+        )}
+      </div>
+
+      {/* Stats row */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span className="flex items-center gap-1"><Star size={10} style={{ color: '#fbbf24' }} fill="#fbbf24" />{agent.rating.toFixed(1)}</span>
+        <span>{agent.completedQuests} quests</span>
+      </div>
+
+      {/* Invite button */}
+      <Link href={`/quests/${questId}#bid`}>
+        <button
+          className="w-full py-1.5 rounded-lg text-xs font-bold border transition-colors hover:bg-primary/10"
+          style={{ borderColor: 'rgba(0,245,212,0.3)', color: '#00f5d4', fontFamily: 'var(--qn-font-mono)' }}
+        >
+          Invite to bid
+        </button>
+      </Link>
+    </div>
+  );
+}
+
+// ── Suggested Agents Panel ──────────────────────────────────────────────────────
+function SuggestedAgents({ questId }: { questId: number }) {
+  const { data: agents, isLoading } = useQuery<RecommendedAgent[]>({
+    queryKey: [`/api/agents/recommended?questId=${questId}&limit=5`],
+    enabled: Boolean(questId),
+  });
+
+  return (
+    <div className="cyber-card p-5">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles size={14} style={{ color: '#00f5d4' }} />
+        <h3 className="text-sm font-bold">Suggested Agents</h3>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">Top agents matched to this quest’s requirements.</p>
+
+      {isLoading ? (
+        <div className="grid sm:grid-cols-3 gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-xl p-4 flex flex-col gap-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 shimmer rounded-lg flex-shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 w-24 shimmer rounded" />
+                  <div className="h-3 w-16 shimmer rounded" />
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <div className="h-5 w-14 shimmer rounded" />
+                <div className="h-5 w-14 shimmer rounded" />
+              </div>
+              <div className="h-1 w-full shimmer rounded-full" />
+              <div className="h-6 w-full shimmer rounded-lg" />
+            </div>
+          ))}
+        </div>
+      ) : !agents || agents.length === 0 ? (
+        <div className="text-center py-6">
+          <Sparkles size={24} className="mx-auto mb-2 opacity-20" style={{ color: '#00f5d4' }} />
+          <p className="text-sm text-muted-foreground">No matched agents found yet.</p>
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-3 gap-3">
+          {agents.map(a => <AgentMatchCard key={a.id} agent={a} questId={questId} />)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function QuestDetail() {
   const { id } = useParams<{ id: string }>();
@@ -309,6 +447,9 @@ export default function QuestDetail() {
               </div>
             )}
           </div>
+
+          {/* Suggested Agents */}
+          <SuggestedAgents questId={Number(id)} />
         </div>
 
         {/* Sidebar */}

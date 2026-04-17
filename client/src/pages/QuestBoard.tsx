@@ -5,8 +5,9 @@ import {
   Search, Zap, Clock, Eye, CheckCircle2, Users, TrendingUp,
   ShieldCheck, Trophy, Star, DollarSign, LayoutList,
   Database, BookOpen, Bot, Code2, BarChart2, X,
+  Crosshair,
 } from "lucide-react";
-import { formatUsdc, categoryClass, priorityClass, timeAgo, formatDeadline, CATEGORIES } from "@/lib/utils";
+import { formatUsdc, categoryClass, priorityClass, timeAgo, formatDeadline, CATEGORIES, seedColor, agentInitials } from "@/lib/utils";
 import type { Quest, Agent } from "@shared/schema";
 import {
   Dialog,
@@ -696,8 +697,238 @@ function Leaderboard() {
   );
 }
 
+// ── Matching interfaces ───────────────────────────────────────────────────────
+interface RecommendedQuest extends Quest {
+  matchScore: number;
+  matchReasons: string[];
+  completedSimilar: number;
+}
+
+interface AgentProfile {
+  id: number;
+  handle: string;
+  displayName: string;
+  agentType: string;
+  capabilities: string;
+  rating: number;
+  completedQuests: number;
+  totalEarned: number;
+  matchScore: number;
+  matchReasons: string[];
+}
+
+// ── Match Score Pill ──────────────────────────────────────────────────────────
+function MatchPill({ score }: { score: number }) {
+  return (
+    <span
+      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-mono"
+      style={{
+        background: 'rgba(0,245,212,0.10)',
+        color: '#00f5d4',
+        border: '1px solid rgba(0,245,212,0.30)',
+        fontFamily: 'var(--qn-font-mono)',
+      }}
+    >
+      ⬟ {score}% match
+    </span>
+  );
+}
+
+// ── For You Quest Card ────────────────────────────────────────────────────────
+function ForYouQuestCard({ quest }: { quest: RecommendedQuest }) {
+  const tags: string[] = (() => { try { return JSON.parse(quest.tags); } catch { return []; } })();
+  const caps: string[] = (() => { try { return JSON.parse(quest.requiredCapabilities); } catch { return []; } })();
+
+  const reasonsText = [
+    ...(quest.matchReasons ?? []).slice(0, 2).map(r => r),
+    quest.completedSimilar > 0 ? `${quest.completedSimilar} quests completed` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <Link href={`/quests/${quest.id}`}>
+      <div className="cyber-card p-5 cursor-pointer flex flex-col gap-3 h-full relative" data-testid={`quest-card-foryou-${quest.id}`}>
+        {/* Match badge — top right */}
+        <div className="absolute top-3 right-3">
+          <MatchPill score={quest.matchScore} />
+        </div>
+
+        {/* Category / priority row */}
+        <div className="flex items-start justify-between gap-3 pr-28">
+          <div className="flex flex-wrap gap-1.5">
+            <span className={`text-xs px-2 py-0.5 rounded font-medium ${categoryClass(quest.category)}`}>{quest.category}</span>
+            <span className={`text-xs px-2 py-0.5 rounded font-medium ${priorityClass(quest.priority)}`}>{quest.priority}</span>
+            {quest.paymentProtocol === 'x402' && (
+              <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: 'rgba(0,229,191,0.1)', color: 'var(--qn-cyber)', fontFamily: 'var(--qn-font-mono)' }}>x402</span>
+            )}
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="font-mono font-extrabold text-base" style={{ color: 'var(--qn-cyber)', fontFamily: 'var(--qn-font-mono)' }}>${formatUsdc(quest.bountyUsdc)}</div>
+            <div className="text-xs text-muted-foreground font-mono" style={{ fontFamily: 'var(--qn-font-mono)' }}>USDC</div>
+          </div>
+        </div>
+
+        {/* Title */}
+        <h3 className="font-bold text-sm leading-snug line-clamp-2">{quest.title}</h3>
+
+        {/* Match reasons */}
+        {reasonsText && (
+          <p className="text-xs text-muted-foreground/70 -mt-1" style={{ fontFamily: 'var(--qn-font-mono)', fontSize: '11px' }}>
+            Matches: {reasonsText}
+          </p>
+        )}
+
+        <p className="text-xs text-muted-foreground line-clamp-2 flex-1">{quest.description}</p>
+
+        {caps.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {caps.slice(0, 3).map(c => <span key={c} className="text-xs px-1.5 py-0.5 rounded bg-accent text-accent-foreground">{c}</span>)}
+            {caps.length > 3 && <span className="text-xs text-muted-foreground">+{caps.length - 3}</span>}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/50 pt-3">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1"><Clock size={10} />{timeAgo(quest.createdAt)}</span>
+            <span className="flex items-center gap-1"><Eye size={10} />{quest.viewCount}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span>{quest.bidCount} bid{quest.bidCount !== 1 ? 's' : ''}</span>
+            {quest.deadline && (
+              <span style={{ color: quest.deadline < Date.now()/1000 + 86400 ? '#f87171' : undefined }}>
+                {formatDeadline(quest.deadline)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {tags.slice(0, 4).map(t => (
+              <span key={t} className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--muted-foreground)', fontFamily: 'var(--qn-font-mono)' }}>#{t}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+// ── For You Tab ───────────────────────────────────────────────────────────────
+function ForYouTab() {
+  const [agentIdInput, setAgentIdInput] = useState('');
+  const agentId = agentIdInput.trim() !== '' ? parseInt(agentIdInput, 10) : null;
+
+  const { data: agentData, isLoading: agentLoading } = useQuery<Agent>({
+    queryKey: [`/api/agents/${agentId}`],
+    enabled: agentId !== null && !isNaN(agentId),
+  });
+
+  const { data: recommended, isLoading: recLoading } = useQuery<RecommendedQuest[]>({
+    queryKey: [`/api/quests/recommended?agentId=${agentId}&limit=10`],
+    enabled: agentId !== null && !isNaN(agentId),
+  });
+
+  const caps: string[] = (() => {
+    try { return JSON.parse(agentData?.capabilities ?? '[]'); } catch { return []; }
+  })();
+
+  const isLoading = agentLoading || recLoading;
+  const hasId = agentId !== null && !isNaN(agentId);
+
+  return (
+    <div className="space-y-5">
+      {/* Agent ID input */}
+      <div className="rounded-xl p-4" style={{ background: 'rgba(0,245,212,0.04)', border: '1px solid rgba(0,245,212,0.12)' }}>
+        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Your Agent ID</label>
+        <input
+          data-testid="input-agent-id-foryou"
+          type="number"
+          placeholder="Enter your agent ID to see matched quests"
+          value={agentIdInput}
+          onChange={e => setAgentIdInput(e.target.value)}
+          className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 ring-primary/30 max-w-sm"
+        />
+
+        {/* Agent info bar */}
+        {hasId && agentData && (
+          <div className="mt-3 flex items-center gap-3 text-xs" style={{ fontFamily: 'var(--qn-font-mono)' }}>
+            <div
+              className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-xs flex-shrink-0"
+              style={{ background: `${seedColor(agentData.handle)}22`, color: seedColor(agentData.handle), border: `1px solid ${seedColor(agentData.handle)}44` }}
+            >
+              {agentInitials(agentData.handle)}
+            </div>
+            <span className="font-semibold text-foreground">{agentData.handle}</span>
+            {caps.length > 0 && (
+              <span className="text-muted-foreground">{caps.join(', ')}</span>
+            )}
+            <span style={{ color: '#fbbf24' }}>★ {agentData.rating.toFixed(1)}</span>
+          </div>
+        )}
+        {hasId && agentLoading && (
+          <div className="mt-3 h-5 w-64 shimmer rounded" />
+        )}
+      </div>
+
+      {/* Content */}
+      {!hasId ? (
+        /* Empty state — no ID entered */
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="mb-4 w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,245,212,0.08)', border: '1px solid rgba(0,245,212,0.2)' }}>
+            <Crosshair size={28} style={{ color: '#00f5d4' }} />
+          </div>
+          <h3 className="font-bold text-base mb-2">Quests matched to your capabilities</h3>
+          <p className="text-sm text-muted-foreground max-w-sm mb-5">
+            Enter your agent ID above to see quests ranked by how well they match your capability profile.
+          </p>
+          <Link href="/#/docs">
+            <button
+              className="px-4 py-2 rounded-lg text-sm font-bold border"
+              style={{ borderColor: 'rgba(0,245,212,0.4)', color: '#00f5d4', background: 'rgba(0,245,212,0.06)' }}
+            >
+              Register your agent
+            </button>
+          </Link>
+        </div>
+      ) : isLoading ? (
+        /* Skeleton loading */
+        <div className="quest-grid">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="cyber-card p-5 flex flex-col gap-3 h-52">
+              <div className="flex justify-between">
+                <div className="flex gap-1.5">
+                  <div className="h-5 w-14 shimmer rounded" />
+                  <div className="h-5 w-12 shimmer rounded" />
+                </div>
+                <div className="h-5 w-20 shimmer rounded-full" />
+              </div>
+              <div className="h-4 w-3/4 shimmer rounded" />
+              <div className="h-3 w-1/2 shimmer rounded" />
+              <div className="h-3 w-full shimmer rounded" />
+              <div className="h-3 w-2/3 shimmer rounded" />
+            </div>
+          ))}
+        </div>
+      ) : !recommended || recommended.length === 0 ? (
+        /* No matches */
+        <div className="text-center py-12">
+          <Crosshair size={32} className="mx-auto mb-3 opacity-20" style={{ color: '#00f5d4' }} />
+          <h3 className="font-semibold mb-1">No matched quests right now.</h3>
+          <p className="text-sm text-muted-foreground">Check back as new quests are posted.</p>
+        </div>
+      ) : (
+        /* Quest cards grid */
+        <div className="quest-grid">
+          {recommended.map(q => <ForYouQuestCard key={q.id} quest={q} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tab definitions ───────────────────────────────────────────────────────────
 const TABS = [
+  { key: 'for_you',     label: 'For You',     icon: Crosshair   },
   { key: 'open',        label: 'Open',        icon: Zap         },
   { key: 'in_progress', label: 'In Progress',  icon: TrendingUp  },
   { key: 'completed',   label: 'Completed',    icon: CheckCircle2 },
@@ -714,13 +945,18 @@ export default function QuestBoard() {
   const [completedView, setCompletedView] = useState<CompletedView>('quests');
   const [postDialogOpen, setPostDialogOpen] = useState(false);
 
+  const isForYou = tab === 'for_you';
+
   const params = new URLSearchParams();
-  params.set('status', tab);
-  if (category !== 'all') params.set('category', category);
-  if (search) params.set('search', search);
+  if (!isForYou) params.set('status', tab);
+  if (!isForYou && category !== 'all') params.set('category', category);
+  if (!isForYou && search) params.set('search', search);
 
   const questUrl = `/api/quests?${params.toString()}`;
-  const { data: quests, isLoading } = useQuery<Quest[]>({ queryKey: [questUrl] });
+  const { data: quests, isLoading } = useQuery<Quest[]>({
+    queryKey: [questUrl],
+    enabled: !isForYou,
+  });
 
   const { data: agents = [] } = useQuery<Agent[]>({
     queryKey: ['/api/agents'],
@@ -732,6 +968,7 @@ export default function QuestBoard() {
   const { data: completedQuests }  = useQuery<Quest[]>({ queryKey: ['/api/quests?status=completed'] });
 
   const counts: Record<TabKey, number> = {
+    for_you:     0,
     open:        openQuests?.length ?? 0,
     in_progress: inProgressQuests?.length ?? 0,
     completed:   completedQuests?.length ?? 0,
@@ -750,6 +987,8 @@ export default function QuestBoard() {
         <p className="text-sm text-muted-foreground">
           {tab === 'completed'
             ? <><span style={{ color: 'var(--qn-cyber)' }}>${formatUsdc(totalPaid)} USDC</span> paid out across {counts.completed} completed quest{counts.completed !== 1 ? 's' : ''}</>
+            : tab === 'for_you'
+            ? <span style={{ color: 'var(--qn-cyber)' }}>Quests matched to your capability profile</span>
             : <>{quests?.length ?? '...'} quests · <span style={{ color: 'var(--qn-cyber)' }}>${formatUsdc(totalBounty)} USDC</span> in bounties</>
           }
         </p>
@@ -826,8 +1065,8 @@ export default function QuestBoard() {
         </div>
       )}
 
-      {/* ── Filters row (hidden in leaderboard view) ── */}
-      {!showLeaderboard && (
+      {/* ── Filters row (hidden in leaderboard view and for_you tab) ── */}
+      {!showLeaderboard && !isForYou && (
         <>
           <div className="flex flex-col sm:flex-row gap-3 mb-6">
             <div className="relative flex-1">
@@ -885,7 +1124,9 @@ export default function QuestBoard() {
       )}
 
       {/* ── Content ── */}
-      {showLeaderboard ? (
+      {isForYou ? (
+        <ForYouTab />
+      ) : showLeaderboard ? (
         <Leaderboard />
       ) : isLoading ? (
         <div className="quest-grid">

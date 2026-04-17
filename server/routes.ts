@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { randomUUID } from "crypto";
 import { storage } from "./storage";
+import { scoreAgentForQuest, rankAgentsForQuest, rankQuestsForAgent, type AgentForMatching, type QuestForMatching } from "./matching";
 import { sendBidReceivedEmail, sendBidAcceptedEmail, sendQuestCompletedEmail, sendEscrowReleasedEmail } from "./email";
 import { parsePaymentHeader, verifyX402Payment } from "./x402";
 import { insertQuestSchema, insertBidSchema, insertAgentSchema, insertReviewSchema } from "@shared/schema";
@@ -894,6 +895,139 @@ export function registerRoutes(httpServer: Server, app: Express) {
     const ch = activeChannels.get(channelKey);
     if (!ch) return res.status(404).json({ error: "Channel not found" });
     res.json({ channelId: req.params.id, ...ch, isExpired: Date.now() / 1000 > ch.expiry });
+  });
+
+  // GET /api/quests/recommended?agentId=X&limit=10
+  // Returns open quests ranked by match score for the given agent
+  app.get("/api/quests/recommended", async (req, res) => {
+    const agentId = Number(req.query.agentId);
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+
+    if (!agentId || isNaN(agentId)) {
+      return res.status(400).json({
+        error: "Missing agentId query parameter",
+        usage: "GET /api/quests/recommended?agentId=YOUR_AGENT_ID&limit=10",
+        hint: "Register your agent at POST /api/agents to get an ID",
+      });
+    }
+
+    const agent = await storage.getAgent(agentId);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    const allQuests = await storage.getQuests({ status: "open" });
+
+    const agentForMatching: AgentForMatching = {
+      id: agent.id,
+      capabilities: agent.capabilities,
+      rating: agent.rating,
+      completedQuests: agent.completedQuests,
+      agentType: agent.agentType,
+    };
+
+    const questsForMatching: QuestForMatching[] = allQuests.map(q => ({
+      id: q.id,
+      category: q.category,
+      requiredCapabilities: q.requiredCapabilities,
+      tags: q.tags,
+      title: q.title,
+      bountyUsdc: q.bountyUsdc,
+      priority: q.priority,
+    }));
+
+    const ranked = rankQuestsForAgent(questsForMatching, agentForMatching, limit);
+
+    // Hydrate with full quest data
+    const questMap = new Map(allQuests.map(q => [q.id, q]));
+    const results = ranked.map(r => ({
+      ...questMap.get(r.id),
+      _match: {
+        score: r.score,
+        capabilityOverlap: r.capabilityOverlap,
+        performanceScore: r.performanceScore,
+        reasons: r.reasons,
+      },
+    }));
+
+    res.json({
+      agentId,
+      agentHandle: agent.handle,
+      agentCapabilities: JSON.parse(agent.capabilities || "[]"),
+      totalOpen: allQuests.length,
+      matched: results.length,
+      quests: results,
+    });
+  });
+
+  // GET /api/agents/recommended?questId=X&limit=5
+  // Returns agents ranked by match score for the given quest
+  app.get("/api/agents/recommended", async (req, res) => {
+    const questId = Number(req.query.questId);
+    const limit = Math.min(Number(req.query.limit) || 5, 20);
+
+    if (!questId || isNaN(questId)) {
+      return res.status(400).json({
+        error: "Missing questId query parameter",
+        usage: "GET /api/agents/recommended?questId=YOUR_QUEST_ID&limit=5",
+      });
+    }
+
+    const quest = await storage.getQuest(questId);
+    if (!quest) return res.status(404).json({ error: "Quest not found" });
+
+    const allAgents = await storage.getAgents();
+
+    const questForMatching: QuestForMatching = {
+      id: quest.id,
+      category: quest.category,
+      requiredCapabilities: quest.requiredCapabilities,
+      tags: quest.tags,
+      title: quest.title,
+      bountyUsdc: quest.bountyUsdc,
+      priority: quest.priority,
+    };
+
+    const agentsForMatching: AgentForMatching[] = allAgents.map(a => ({
+      id: a.id,
+      capabilities: a.capabilities,
+      rating: a.rating,
+      completedQuests: a.completedQuests,
+      agentType: a.agentType,
+    }));
+
+    const ranked = rankAgentsForQuest(agentsForMatching, questForMatching, limit);
+
+    // Hydrate with full agent data
+    const agentMap = new Map(allAgents.map(a => [a.id, a]));
+    const results = ranked.map(r => {
+      const a = agentMap.get(r.id)!;
+      return {
+        id: a.id,
+        handle: a.handle,
+        displayName: a.displayName,
+        bio: a.bio,
+        capabilities: JSON.parse(a.capabilities || "[]"),
+        rating: a.rating,
+        completedQuests: a.completedQuests,
+        agentType: a.agentType,
+        isOnline: a.isOnline,
+        _match: {
+          score: r.score,
+          capabilityOverlap: r.capabilityOverlap,
+          performanceScore: r.performanceScore,
+          reasons: r.reasons,
+        },
+      };
+    });
+
+    res.json({
+      questId,
+      questTitle: quest.title,
+      questCategory: quest.category,
+      requiredCapabilities: JSON.parse(quest.requiredCapabilities || "[]"),
+      totalAgents: allAgents.length,
+      matched: results.length,
+      agents: results,
+    });
   });
 
   return httpServer;

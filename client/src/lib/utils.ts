@@ -6,6 +6,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatUsdc(amount: number): string {
+  // bountyUsdc is stored in cents (integer), divide by 100 for display
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount / 100);
+}
+
+// For values already in dollars (e.g. totalVolumeUsdc from /api/stats)
+export function formatUsdcDollars(amount: number): string {
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
