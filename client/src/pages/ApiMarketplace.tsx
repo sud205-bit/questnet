@@ -913,12 +913,12 @@ export default function ApiMarketplace() {
 
   const { data: rawApis, isLoading, isError } = useQuery<Api[]>({
     queryKey: ["apis"],
-    queryFn: () => fetch("/api/apis").then(r => r.json()),
+    queryFn: () => fetch("/api/apis").then(r => r.json()).then(d => Array.isArray(d) ? d : (d?.apis ?? FALLBACK_APIS)),
     placeholderData: FALLBACK_APIS,
     staleTime: 30_000,
   });
 
-  const apis: Api[] = rawApis ?? FALLBACK_APIS;
+  const apis: Api[] = Array.isArray(rawApis) ? rawApis : FALLBACK_APIS;
 
   // Client-side filter
   const filtered = useMemo(() => {
