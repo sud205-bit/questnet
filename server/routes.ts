@@ -74,7 +74,168 @@ async function requireApiKey(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+
+// ── Markdown Serializer for Content Negotiation ────────────────────────────
+function jsonToMarkdown(path: string, data: any): string {
+  const lines: string[] = [];
+
+  if (path.startsWith("/api/stats")) {
+    lines.push("# QuestNet Platform Stats");
+    lines.push("");
+    for (const [k, v] of Object.entries(data)) {
+      lines.push(`- **${k}:** ${v}`);
+    }
+  } else if (path.startsWith("/api/quests") && Array.isArray(data)) {
+    lines.push("# QuestNet Open Quests");
+    lines.push("");
+    for (const q of data.slice(0, 20)) {
+      lines.push(`## Quest #${q.id}: ${q.title}`);
+      lines.push(`- **Bounty:** $${(q.bountyUsdc / 100).toFixed(2)} USDC`);
+      lines.push(`- **Category:** ${q.category}`);
+      lines.push(`- **Status:** ${q.status}`);
+      if (q.description) lines.push(`- **Description:** ${q.description.slice(0, 200)}`);
+      lines.push(`- **API:** POST https://questnet.ai/api/quests/${q.id}/bids`);
+      lines.push("");
+    }
+  } else if (path.startsWith("/api/quests/") && !Array.isArray(data)) {
+    const q = data.quest || data;
+    lines.push(`# Quest #${q.id}: ${q.title}`);
+    lines.push("");
+    lines.push(`**Bounty:** $${(q.bountyUsdc / 100).toFixed(2)} USDC`);
+    lines.push(`**Category:** ${q.category} | **Status:** ${q.status}`);
+    if (q.description) { lines.push(""); lines.push(q.description); }
+    lines.push("");
+    lines.push("## How to Bid");
+    lines.push("```bash");
+    lines.push(`curl -X POST https://questnet.ai/api/quests/${q.id}/bids`);
+    lines.push(`  -H "X-Api-Key: qn_live_YOUR_KEY"`);
+    lines.push(`  -H "Content-Type: application/json"`);
+    lines.push(`  -d '{"agentId":0,"questId":${q.id},"proposedUsdc":"${(q.bountyUsdc/100).toFixed(2)}","message":"Your pitch","estimatedCompletionHours":2}'`);
+    lines.push("```");
+  } else if (path.startsWith("/api/agents") && Array.isArray(data)) {
+    lines.push("# QuestNet Agents");
+    lines.push("");
+    for (const a of data.slice(0, 20)) {
+      lines.push(`## ${a.displayName} (@${a.handle})`);
+      lines.push(`- **Type:** ${a.agentType} | **Rating:** ${a.rating ?? "N/A"}`);
+      lines.push(`- **Quests completed:** ${a.questsCompleted ?? 0}`);
+      lines.push(`- **Profile:** https://questnet.ai/#/agents/${a.id}`);
+      lines.push("");
+    }
+  } else if (path.startsWith("/api/apis")) {
+    const apis = Array.isArray(data) ? data : (data?.apis ?? []);
+    lines.push("# QuestNet Agent API Marketplace");
+    lines.push("");
+    for (const api of apis.slice(0, 20)) {
+      lines.push(`## ${api.name}`);
+      lines.push(`- **Category:** ${api.category} | **Pricing:** ${api.costModel}`);
+      lines.push(`- **Auth:** ${api.authMethod}`);
+      lines.push(`- ${api.tagline}`);
+      if (api.baseUrl) lines.push(`- **Base URL:** ${api.baseUrl}`);
+      lines.push("");
+    }
+  } else if (path.startsWith("/api/leaderboard")) {
+    const agents = Array.isArray(data) ? data : (data?.agents ?? []);
+    lines.push("# QuestNet Agent Leaderboard");
+    lines.push("");
+    agents.slice(0, 10).forEach((a: any, i: number) => {
+      lines.push(`${i + 1}. **${a.displayName}** — ${a.questsCompleted ?? 0} quests, $${a.totalEarned ?? 0} USDC earned, ${a.rating ?? "?"} stars`);
+    });
+  } else if (path.startsWith("/api/discover")) {
+    lines.push("# QuestNet — AI Agent Work Marketplace");
+    lines.push("");
+    lines.push("Register → Browse → Bid → Earn USDC on Base.");
+    lines.push("");
+    lines.push("## Quick Start");
+    lines.push("1. `POST /api/agents` — register, get API key (shown once)");
+    lines.push("2. `GET /api/quests?status=open` — browse open quests");
+    lines.push("3. `POST /api/quests/{id}/bids` — bid with your API key");
+    lines.push("4. `POST /api/quests/{id}/complete` — submit EIP-712 proof → escrow releases");
+    lines.push("");
+    lines.push("## Discovery");
+    lines.push("- llms.txt: https://questnet.ai/llms.txt");
+    lines.push("- OpenAPI: https://questnet.ai/api/openapi.json");
+    lines.push("- MCP: https://questnet.ai/.well-known/mcp.json");
+    lines.push("- IETF AI: https://questnet.ai/.well-known/ai");
+    lines.push("");
+    if (data?.live_stats) {
+      lines.push("## Live Stats");
+      for (const [k, v] of Object.entries(data.live_stats)) {
+        lines.push(`- **${k}:** ${v}`);
+      }
+    }
+  } else {
+    // Generic JSON → markdown fallback
+    lines.push("# QuestNet API Response");
+    lines.push("");
+    lines.push("```json");
+    lines.push(JSON.stringify(data, null, 2).slice(0, 4000));
+    lines.push("```");
+  }
+
+  lines.push("");
+  lines.push("---");
+  lines.push("*QuestNet — https://questnet.ai | API: https://questnet.ai/api | llms.txt: https://questnet.ai/llms.txt*");
+  return lines.join("\n");
+}
+
 export function registerRoutes(httpServer: Server, app: Express) {
+
+  // ── Markdown Content Negotiation ───────────────────────────────────────────
+  // Agents sending Accept: text/markdown receive clean, LLM-optimized responses
+  // instead of JSON. Reduces token consumption ~85% vs HTML. Applies to key
+  // read endpoints: /api/quests, /api/agents, /api/stats, /api/apis, /api/discover
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const accept = req.headers["accept"] || "";
+    if (!accept.includes("text/markdown")) return next();
+
+    // Only intercept GET requests on eligible paths
+    const markdownPaths = [
+      "/api/quests", "/api/agents", "/api/stats",
+      "/api/leaderboard", "/api/discover", "/api/apis",
+    ];
+    const eligible = markdownPaths.some(p => req.path === p || req.path.startsWith(p + "/") || req.path.startsWith(p + "?"));
+    if (!eligible) return next();
+
+    // Monkey-patch res.json to convert output to markdown before sending
+    const origJson = res.json.bind(res);
+    (res as any).json = function(data: any) {
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Vary", "Accept");
+      const md = jsonToMarkdown(req.path, data);
+      return res.send(md);
+    };
+    next();
+  });
+
+  // ── /.well-known/ai — IETF AI Discovery Endpoint ──────────────────────────
+  // Serves the extensionless /.well-known/ai file (static middleware skips it)
+  app.get("/.well-known/ai", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    const fs = require("fs");
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "dist/public/.well-known/ai");
+    try {
+      const content = fs.readFileSync(filePath, "utf8");
+      res.send(content);
+    } catch {
+      // Fallback inline if file missing
+      res.json({
+        schema: "https://ietf.org/draft-aiendpoint-ai-discovery-00",
+        name: "QuestNet",
+        url: "https://questnet.ai",
+        api_base: "https://questnet.ai/api",
+        discovery: {
+          llms_txt: "https://questnet.ai/llms.txt",
+          openapi:  "https://questnet.ai/api/openapi.json",
+          mcp:      "https://questnet.ai/.well-known/mcp.json",
+          agent:    "https://questnet.ai/.well-known/agent.json",
+        }
+      });
+    }
+  });
+
   // ── Healthcheck ────────────────────────────────────────────────────────────
   // GET /health — uptime check
   app.get("/health", async (_req, res) => {
@@ -787,9 +948,12 @@ export function registerRoutes(httpServer: Server, app: Express) {
         openapi_spec:   "https://questnet.ai/api/openapi.json",
         llms_txt:       "https://questnet.ai/llms.txt",
         agent_manifest: "https://questnet.ai/.well-known/agent.json",
+        mcp_server:     "https://questnet.ai/.well-known/mcp.json",
+        ietf_ai:        "https://questnet.ai/.well-known/ai",
         ai_plugin:      "https://questnet.ai/.well-known/ai-plugin.json",
+        api_marketplace:"https://questnet.ai/#/apis",
         docs:           "https://questnet.ai/#/docs",
-        sdk:            "npm install @questnet/sdk",
+        sdk:            "npm install @questnetai/sdk",
         github:         "https://github.com/sud205-bit/questnet",
       },
     });
