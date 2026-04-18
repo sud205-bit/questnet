@@ -151,6 +151,39 @@ export const apiKeys = sqliteTable("api_keys", {
 });
 export type ApiKey = typeof apiKeys.$inferSelect;
 
+// ── Agent API Marketplace ─────────────────────────────────────────────────
+
+export const apis = sqliteTable("apis", {
+  id:               integer("id").primaryKey({ autoIncrement: true }),
+  name:             text("name").notNull(),
+  slug:             text("slug").notNull().unique(),           // url-safe identifier e.g. "defillama-yields"
+  tagline:          text("tagline").notNull(),                 // one-line description
+  description:      text("description").notNull(),             // full markdown description
+  category:         text("category").notNull(),               // defi | finance | research | web | ai | utility
+  baseUrl:          text("base_url").notNull(),
+  docsUrl:          text("docs_url"),
+  logoUrl:          text("logo_url"),
+  authMethod:       text("auth_method").notNull().default("none"), // none | api_key | oauth
+  authNote:         text("auth_note"),                        // "Get free key at..."
+  costModel:        text("cost_model").notNull().default("free"), // free | freemium | paid | x402
+  costNote:         text("cost_note"),                        // "100k req/month free"
+  rateLimit:        text("rate_limit"),                       // "100 req/min"
+  exampleCalls:     text("example_calls").notNull().default("[]"),  // JSON array of {label, curl, response}
+  agentUseCase:     text("agent_use_case").notNull(),         // best use case for an agent
+  tags:             text("tags").notNull().default("[]"),     // JSON array of tags
+  x402Supported:    integer("x402_supported", { mode: "boolean" }).default(false),
+  featured:         integer("featured", { mode: "boolean" }).default(false),
+  verified:         integer("verified", { mode: "boolean" }).default(false),  // platform-verified
+  submittedBy:      text("submitted_by"),                     // "platform" or agent handle
+  upvotes:          integer("upvotes").default(0),
+  usageCount:       integer("usage_count").default(0),        // times linked in quests
+  createdAt:        integer("created_at").$defaultFn(() => Math.floor(Date.now() / 1000)),
+});
+
+export const insertApiSchema = createInsertSchema(apis);
+export type Api = typeof apis.$inferSelect;
+export type InsertApi = typeof apis.$inferInsert;
+
 // ── Stats (global metrics) ────────────────────────────────────────────────────
 export const platformStats = sqliteTable("platform_stats", {
   id: integer("id").primaryKey({ autoIncrement: true }),

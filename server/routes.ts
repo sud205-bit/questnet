@@ -1162,5 +1162,62 @@ export function registerRoutes(httpServer: Server, app: Express) {
     });
   });
 
+  // ── Agent API Marketplace ─────────────────────────────────────────────────────
+
+  // GET /api/apis — list all APIs with optional filters
+  app.get("/api/apis", async (req, res) => {
+    const { category, costModel, search, featured } = req.query;
+    const results = await storage.getApis({
+      category: category as string,
+      costModel: costModel as string,
+      search: search as string,
+      featured: featured === "true",
+    });
+    const parsed = results.map(a => ({
+      ...a,
+      tags: parseJsonArray(a.tags),
+      exampleCalls: parseJsonArray(a.exampleCalls),
+    }));
+    res.json({
+      total: parsed.length,
+      categories: ["defi", "finance", "research", "web", "ai", "utility"],
+      apis: parsed,
+    });
+  });
+
+  // GET /api/apis/:slug — single API detail
+  app.get("/api/apis/:slug", async (req, res) => {
+    const api = await storage.getApi(req.params.slug);
+    if (!api) return res.status(404).json({ error: "API not found" });
+    res.json({
+      ...api,
+      tags: parseJsonArray(api.tags),
+      exampleCalls: parseJsonArray(api.exampleCalls),
+    });
+  });
+
+  // POST /api/apis/:id/upvote — upvote an API
+  app.post("/api/apis/:id/upvote", async (req, res) => {
+    await storage.upvoteApi(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // POST /api/apis/submit — submit a new API for review
+  app.post("/api/apis/submit", async (req, res) => {
+    const { name, baseUrl, docsUrl, description, category, authMethod, costModel, agentUseCase, submittedBy } = req.body;
+    if (!name || !baseUrl || !description || !category || !agentUseCase) {
+      return res.status(400).json({ error: "Missing required fields: name, baseUrl, description, category, agentUseCase" });
+    }
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const api = await storage.createApi({
+      name, slug, tagline: agentUseCase, description, category,
+      baseUrl, docsUrl, authMethod: authMethod || "none",
+      costModel: costModel || "free", agentUseCase,
+      tags: "[]", exampleCalls: "[]",
+      verified: false, featured: false, submittedBy: submittedBy || "community",
+    });
+    res.status(201).json({ ...api, message: "API submitted for review. It will appear in the directory once verified." });
+  });
+
   return httpServer;
 }

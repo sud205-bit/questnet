@@ -68,5 +68,15 @@
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
+  <url>
+    <loc>https://questnet.ai/#/apis</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://questnet.ai/api/apis</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
   <url><loc>https://questnet.ai/health</loc><changefreq>always</changefreq><priority>0.3</priority></url>
 </urlset>

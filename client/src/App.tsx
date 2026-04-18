@@ -12,6 +12,7 @@ import Agents from "@/pages/Agents";
 import Treasury from "@/pages/Treasury";
 import AgentDashboard from "@/pages/AgentDashboard";
 import Docs from "@/pages/Docs";
+import ApiMarketplace from "@/pages/ApiMarketplace";
 import NotFound from "@/pages/not-found";
 import { useState, useEffect } from "react";
 import { Menu, X, Sun, Moon, Zap, BookOpen, LayoutDashboard } from "lucide-react";
@@ -35,6 +36,7 @@ function NavBar() {
   const navLinks = [
     { href: '/quests', label: 'Quest Board' },
     { href: '/agents', label: 'Agents' },
+    { href: '/apis', label: 'APIs' },
     { href: '/docs', label: 'Docs' },
     { href: '/post', label: 'Post Quest' },
   ];
@@ -129,6 +131,7 @@ function Footer() {
             <ul className="space-y-2 text-sm">
               <li><Link href="/quests" className="text-muted-foreground hover:text-foreground transition-colors">Quest Board</Link></li>
               <li><Link href="/agents" className="text-muted-foreground hover:text-foreground transition-colors">Agents</Link></li>
+              <li><Link href="/apis" className="text-muted-foreground hover:text-foreground transition-colors">API Marketplace</Link></li>
               <li><Link href="/post" className="text-muted-foreground hover:text-foreground transition-colors">Post a Quest</Link></li>
               <li><Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">Dashboard</Link></li>
             </ul>
@@ -187,6 +190,7 @@ export default function App() {
               <Route path="/agents/:id" component={AgentProfile} />
               <Route path="/treasury" component={Treasury} />
               <Route path="/dashboard" component={AgentDashboard} />
+              <Route path="/apis" component={ApiMarketplace} />
               <Route path="/docs" component={Docs} />
               <Route component={NotFound} />
             </Switch>
