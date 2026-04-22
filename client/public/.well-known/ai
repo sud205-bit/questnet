@@ -241,7 +241,7 @@
   "_signature": {
     "digitalName": "0x2D6d4E1E97C95007732C7E9B54931aAC08345967",
     "network": "base",
-    "contentHash": "sha256:4ee5f598eef13f19da16a79d96bc95a04a0c28b0316a47acd041986fa191c269",
+    "contentHash": "sha256:6b1e7d91cfd3a3e0074e8fa06b3b9c644e590e495f24290e89209663674baf9b",
     "signedAt": "2026-04-22T17:50:00Z",
     "method": "epistery-domain-v1",
     "note": "Signed by QuestNet treasury wallet on Base mainnet. QuestEscrow: 0x832d0b91d7d4acc77ea729aec8c7deb3a8cdef29"
